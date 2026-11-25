@@ -1,0 +1,82 @@
+"""Use case: price percentiles per stay length, discounts, availability and your position."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from airbnb_tracker.application.dto import DurationReport, ReportBundle
+from airbnb_tracker.application.ports import CalendarRepository, Clock, SnapshotRepository
+from airbnb_tracker.domain.entities import ListingOffer, Snapshot
+from airbnb_tracker.domain.market_analysis import DiscountStats, MarketAnalyzer
+from airbnb_tracker.domain.profile import AvailabilitySummary
+from airbnb_tracker.domain.value_objects import ListingId, Money, StayPeriod
+
+
+@dataclass(frozen=True, slots=True)
+class BuildReportQuery:
+    stays: Sequence[StayPeriod]
+    my_listing_id: ListingId | None = None
+    my_nightly_price: Money | None = None
+    availability_window_days: int = 60
+
+
+class BuildMarketReportUseCase:
+    def __init__(
+        self,
+        snapshots: SnapshotRepository,
+        calendars: CalendarRepository,
+        clock: Clock,
+        analyzer: MarketAnalyzer | None = None,
+    ) -> None:
+        self._snapshots = snapshots
+        self._calendars = calendars
+        self._clock = clock
+        self._analyzer = analyzer or MarketAnalyzer()
+
+    def execute(self, query: BuildReportQuery) -> ReportBundle:
+        latest = [s for s in map(self._snapshots.latest, query.stays) if s is not None]
+        by_nights: dict[int, list[Snapshot]] = defaultdict(list)
+        for snapshot in latest:
+            by_nights[snapshot.stay.nights].append(snapshot)
+
+        calendars = self._calendars.latest_calendars()
+        mine = calendars.pop(query.my_listing_id, None) if query.my_listing_id else None
+        window = query.availability_window_days
+        return ReportBundle(
+            generated_at=self._clock.now(),
+            data_captured_at=max((s.captured_at for s in latest), default=None),
+            durations=tuple(
+                self._duration_report(nights, by_nights[nights], query)
+                for nights in sorted(by_nights)
+            ),
+            availability=AvailabilitySummary.from_calendars(list(calendars.values()), window),
+            availability_window_days=window,
+            my_unavailable_pct=mine.unavailable_pct(window) if mine else None,
+            my_min_nights=mine.typical_min_nights(window) if mine else None,
+        )
+
+    def _duration_report(
+        self, nights: int, snapshots: Sequence[Snapshot], query: BuildReportQuery
+    ) -> DurationReport:
+        competitors: list[ListingOffer] = [
+            offer
+            for snapshot in snapshots
+            for offer in snapshot.offers
+            if offer.listing.id != query.my_listing_id
+        ]
+        analysis = self._analyzer.analyze(competitors, query.my_nightly_price)
+        discounts = DiscountStats.from_offers(competitors)
+        return DurationReport(
+            nights=nights,
+            check_ins=len(snapshots),
+            observations=len(competitors),
+            listings=len({o.listing.id for o in competitors}),
+            distribution=analysis.distribution,
+            median_discount_pct=discounts.median_pct,
+            discounted_share_pct=discounts.discounted_share_pct,
+            my_nightly=query.my_nightly_price,
+            position=analysis.position,
+            percentile=analysis.percentile,
+        )

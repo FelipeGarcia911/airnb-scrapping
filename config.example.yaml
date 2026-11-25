@@ -1,0 +1,53 @@
+# Copy this file to config.yaml and adjust it:  cp config.example.yaml config.yaml
+
+# Your own listing: exported with the same schema (is_mine = true).
+my_listing:
+  id: null                  # Your listing id: airbnb.com/rooms/<ID>
+  nightly_price: null       # Your nightly price, to position it in the report
+
+# Search: location, filters and guests stay constant across runs.
+search:
+  # Option A: center + radius (km). Approximate coordinates of Pereira, Colombia.
+  latitude: 4.8133
+  longitude: -75.6961
+  radius_km: 6
+  # Option B: paste an airbnb.com search URL with your filters already applied.
+  # The URL dates are replaced for every `stays` combination.
+  url: null
+  complete_coverage: true   # Airbnb caps result pages; splitting the area finds ~15% more
+
+  guests: 2
+  room_type: entire_place   # entire_place | private_room | null (any)
+  min_bedrooms: 2
+  max_bedrooms: 3           # Airbnb has no such filter: applied after searching
+  min_bathrooms: 1
+  min_beds: null
+  price_min: null
+  price_max: null
+  min_rating: null
+  exclude_ids: []
+
+# Pricing scenarios: every stay length x every check-in date.
+stays:
+  durations: [7, 14, 20, 28, 30, 60, 90]
+  first_check_in_days: 7    # first check-in: today + 7 days
+  every_days: 30            # one check-in date every 30 days...
+  horizon_days: 180         # ...over the next 6 months
+
+# Listing pages (amenities, description, capacity) and calendars (availability, minimum stay).
+enrich:
+  max_listings_per_run: 50  # the rest is picked up by the next run
+  details_refresh_days: 7
+  calendar_refresh_days: 2
+  availability_window_days: 60
+
+scraping:
+  currency: COP
+  proxy_url: ""             # or the AIRBNB_TRACKER_PROXY_URL environment variable
+  min_delay_seconds: 3      # pause between requests: keep usage moderate
+  max_attempts: 3
+  backoff_seconds: 5
+
+storage:
+  database_path: data/airbnb.db
+  exports_dir: exports

@@ -1,0 +1,90 @@
+{
+ "room_id": 604391520247234936,
+ "category": "",
+ "structuredContent": {
+  "primaryLine": [
+   {
+    "__typename": "MainSectionMessage",
+    "body": "1 bedroom",
+    "bodyA11yLabel": null,
+    "bodyType": null,
+    "fontWeight": null,
+    "headline": null,
+    "type": "BEDINFO"
+   },
+   {
+    "__typename": "MainSectionMessage",
+    "body": "1 queen bed",
+    "bodyA11yLabel": null,
+    "bodyType": null,
+    "fontWeight": null,
+    "headline": null,
+    "type": "BEDINFO"
+   },
+   {
+    "__typename": "MainSectionMessage",
+    "body": "1 bath",
+    "bodyA11yLabel": null,
+    "bodyType": null,
+    "fontWeight": null,
+    "headline": null,
+    "type": "BATHROOMINFO"
+   }
+  ]
+ },
+ "passportData": {},
+ "paymentMessages": [],
+ "kind": "",
+ "name": "Loft 18 Poblado•Fast WiFi•Pool•Nature•Top Location",
+ "title": "Loft in Medellín",
+ "type": "",
+ "long_stay_discount": {
+  "amount": -19.97,
+  "currency_symbol": "$ USD"
+ },
+ "fee": {
+  "airbnb": {},
+  "cleaning": {}
+ },
+ "price": {
+  "unit": {
+   "qualifier": "for 3 nights",
+   "curency_symbol": "$ USD",
+   "amount": 200.0,
+   "discount": 180.0
+  },
+  "total": {
+   "currency_symbol": "",
+   "amount": 0
+  },
+  "break_down": [
+   {
+    "description": "3 nights x $66.58 USD",
+    "amount": 199.73,
+    "currency": "$ USD"
+   },
+   {
+    "description": "Long stay discount",
+    "amount": -19.97,
+    "currency": "$ USD"
+   },
+   {
+    "description": "Price after discount",
+    "amount": 179.76,
+    "currency": "$ USD"
+   }
+  ]
+ },
+ "rating": {
+  "value": 4.83,
+  "reviewCount": "325"
+ },
+ "images": [],
+ "badges": [
+  "GUEST_FAVORITE"
+ ],
+ "coordinates": {
+  "latitude": 6.2018,
+  "longitud": -75.5691
+ }
+}
