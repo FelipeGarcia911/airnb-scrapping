@@ -14,6 +14,7 @@ INK = "#222222"
 MUTED = "#717171"
 BORDER = "#DDDDDD"
 SURFACE = "#F7F7F7"
+AREA_FILL = "#FF385C33"  # coral at 20% opacity: the map stays visible underneath
 
 FONT_URL = "https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap"
 

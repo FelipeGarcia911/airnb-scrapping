@@ -21,19 +21,20 @@ from pathlib import Path
 from typing import TextIO
 
 from airbnb_tracker.application.exceptions import ApplicationError
+from airbnb_tracker.application.progress import Phase, ProgressEvent
 from airbnb_tracker.application.use_cases import (
     BuildReportQuery,
     EnrichCommand,
     EnrichPart,
     ExportQuery,
     ScanMarketCommand,
-    ScanSummary,
 )
 from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.domain.exceptions import DomainError
 from airbnb_tracker.domain.value_objects import Money, StayPeriod
 from airbnb_tracker.infrastructure.config import ConfigurationError, load_settings
 from airbnb_tracker.infrastructure.exporters import UnknownFormatError
+from airbnb_tracker.infrastructure.progress import progress_for_cli
 
 CONFIG_ENV_VAR = "AIRBNB_TRACKER_CONFIG"
 EXPORT_FORMATS = ("csv", "json")
@@ -45,6 +46,7 @@ class TrackerCli:
     def __init__(self, container: Container, out: TextIO) -> None:
         self._c = container
         self._out = out
+        self._progress = progress_for_cli(out)
         self._stays: list[StayPeriod] = container.settings.stays.resolve(
             container.clock.now().date()
         )
@@ -64,13 +66,8 @@ class TrackerCli:
                 max_listings=search.max_listings,
                 competitor_filter=self._c.competitor_filter(),
             ),
-            on_progress=self._scan_progress,
+            progress=self._progress,
         )
-
-    def _scan_progress(self, s: ScanSummary, done: int, total: int) -> None:
-        detail = f"ERROR: {s.error}" if s.error else f"{s.kept} listings (of {s.found})"
-        warning = "  [truncated by Airbnb: results may be incomplete]" if s.truncated else ""
-        self._print(f"  [{done}/{total}] {s.stay}: {detail}{warning}")
 
     def enrich(self, args: argparse.Namespace) -> None:
         settings = self._c.settings
@@ -94,9 +91,7 @@ class TrackerCli:
                 calendar_refresh=settings.enrich.calendar_refresh,
                 reviews_refresh=settings.enrich.reviews_refresh,
             ),
-            on_progress=lambda listing_id, done, total: self._print(
-                f"  [{done}/{total}] listing {listing_id}"
-            ),
+            progress=self._progress,
         )
         fetched = " · ".join(f"{part.value}: {n}" for part, n in summary.fetched.items())
         self._print(
@@ -121,6 +116,7 @@ class TrackerCli:
 
     def export(self, args: argparse.Namespace) -> None:
         settings = self._c.settings
+        self._progress(ProgressEvent(Phase.FILES, 0, 1, "Writing export files"))
         destination = self._c.export_dataset.execute(
             ExportQuery(
                 as_of=self._c.clock.now(),
@@ -130,7 +126,7 @@ class TrackerCli:
             ),
             self._c.dataset_exporter(args.format),
         )
-        self._print(f"Data exported to {destination}/")
+        self._progress(ProgressEvent(Phase.FILES, 1, 1, f"Files written to {destination}/"))
 
     def run(self, args: argparse.Namespace) -> None:
         self.scan(args)

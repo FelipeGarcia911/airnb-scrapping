@@ -144,16 +144,22 @@ Useful options:
 uv run airbnb-tracker ui        # opens http://localhost:8501
 ```
 
-A local web app (Streamlit) with three tabs:
+A local web app (Streamlit), organised like market-intelligence dashboards
+(comp set + dashboard):
 
-- **Search setup**: your listing (paste its link and center the search on it), location and
-  radius or an Airbnb search URL, filters, stay lengths, check-in dates and number of
-  competitors. Shows how many searches it implies and the estimated run time, and saves
-  `config.yaml` with the same validation as the command line.
-- **Run**: start price scans, enrichment (pages, calendars, reviews), exports or everything,
-  in the background with live progress and logs. You can switch tabs or close the page.
-- **Results**: price percentiles per stay length with your position, availability and
-  minimum stay, a map of competitors, and every table filterable and downloadable as CSV.
+| Page | What it is for |
+|---|---|
+| **Overview** | Key numbers of your comp set (typical price, your position, nights not bookable, minimum stay) and plain-language takeaways. |
+| **Prices** | Price ranges per stay length (P25 / median / P75), monthly equivalent, discounts, your position and prices by check-in date (seasonality). |
+| **Comp set** | Map and list of competitors with links to Airbnb, and which amenities they offer versus yours. |
+| **Availability** | Nights not bookable in the next 30/60/90 days, minimum stays, monthly specialists and recent reviews. |
+| **Set up my market** | Guided steps: your listing (centre the search on it from its link), area, comparable filters, stay lengths and comp set size, with the resulting number of searches and run time. |
+| **Data & exports** | Download every table as CSV, run partial updates (prices only, details only, files) and read update logs. |
+
+**Update market data** lives in the sidebar on every page. While it runs you can keep
+browsing; the sidebar shows the current step (Prices → Listing details → Export files), what
+is being read right now, items done and an estimate of the time left. The CLI prints the same
+progress, so a terminal run is never silent either.
 
 The app only listens on `localhost`. Saving from the UI rewrites `config.yaml` without
 comments; `config.example.yaml` keeps the documented version.
@@ -353,7 +359,7 @@ src/airbnb_tracker/
 │   └── config.py          config.yaml loading and validation
 ├── interface/
 │   ├── cli.py             Command-line interface
-│   └── web/               Streamlit UI (setup, run and results tabs)
+│   └── web/               Streamlit UI: pages/, sidebar status, background jobs
 └── bootstrap.py       Composition root: wires everything together
 ```
 

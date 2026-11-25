@@ -20,6 +20,7 @@ from airbnb_tracker.application.ports import (
     SearchRunRepository,
     SnapshotRepository,
 )
+from airbnb_tracker.application.progress import Phase, ProgressEvent, ProgressListener, silent
 from airbnb_tracker.domain.entities import ListingOffer, Snapshot
 from airbnb_tracker.domain.specifications import AnyListing, ListingSpecification, WithinRadius
 from airbnb_tracker.domain.value_objects import BoundingBox, GeoPoint, ListingId, StayPeriod
@@ -73,17 +74,18 @@ class ScanMarketUseCase:
     def execute(
         self,
         command: ScanMarketCommand,
-        on_progress: Callable[[ScanSummary, int, int], None] | None = None,
+        progress: ProgressListener = silent,
     ) -> list[ScanSummary]:
-        """Run every search; ``on_progress(summary, done, total)`` fires after each one."""
+        """Run every search, announcing each one before and after it runs."""
         run_id = self._id_factory()
         area, is_competitor = self._area_and_rule(command)
+        total = len(command.stays)
         summaries = []
-        for done, stay in enumerate(command.stays, start=1):
+        for index, stay in enumerate(command.stays):
+            progress(ProgressEvent(Phase.PRICES, index, total, f"Searching {describe(stay)}"))
             summary = self._scan(run_id, command, stay, area, is_competitor)
             summaries.append(summary)
-            if on_progress:
-                on_progress(summary, done, len(command.stays))
+            progress(ProgressEvent(Phase.PRICES, index + 1, total, _outcome(summary)))
         return summaries
 
     @staticmethod
@@ -164,6 +166,19 @@ class ScanMarketUseCase:
                 error=summary.error,
             )
         )
+
+
+def describe(stay: StayPeriod) -> str:
+    """'30 nights · check-in Jan 1, 2027'"""
+    check_in = stay.check_in
+    return f"{stay.nights} nights · check-in {check_in:%b} {check_in.day}, {check_in.year}"
+
+
+def _outcome(summary: ScanSummary) -> str:
+    if summary.error:
+        return f"{describe(summary.stay)}: failed ({summary.error})"
+    note = " (Airbnb truncated the results)" if summary.truncated else ""
+    return f"{describe(summary.stay)}: {summary.kept} listings{note}"
 
 
 def _summary(stay: StayPeriod, result: SearchResult, kept: int) -> ScanSummary:

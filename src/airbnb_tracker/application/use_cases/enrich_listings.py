@@ -24,6 +24,7 @@ from airbnb_tracker.application.ports import (
     ReviewRepository,
     SnapshotRepository,
 )
+from airbnb_tracker.application.progress import Phase, ProgressEvent, ProgressListener, silent
 from airbnb_tracker.domain.profile import CalendarSnapshot, ListingProfile
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, StayPeriod
 
@@ -83,27 +84,30 @@ class EnrichListingsUseCase:
     def execute(
         self,
         command: EnrichCommand,
-        on_progress: Callable[[ListingId, int, int], None] | None = None,
+        progress: ProgressListener = silent,
     ) -> EnrichSummary:
-        """Enrich the batch; ``on_progress(listing_id, done, total)`` fires per listing."""
+        """Enrich the batch, announcing every listing and kind of data as it is read."""
         now = self._clock.now()
-        candidates = self._candidates(command)
+        candidates, names = self._candidates(command)
         work = self._plan(candidates, now, command)
         batch = work[: max(command.max_listings, 0)]
 
         fetched = dict.fromkeys(EnrichPart, 0)
         failed: list[ListingId] = []
-        for done, (listing_id, parts) in enumerate(batch, start=1):
+        total = len(batch)
+        for index, (listing_id, parts) in enumerate(batch):
             ok = True
+            name = names.get(listing_id) or f"listing {listing_id}"
             for part in parts:
+                message = f"{_PART_LABELS[part]} · {name}"
+                progress(ProgressEvent(Phase.DETAILS, index, total, message))
                 if self._fetch(part, listing_id, now):
                     fetched[part] += 1
                 else:
                     ok = False
             if not ok:
                 failed.append(listing_id)
-            if on_progress:
-                on_progress(listing_id, done, len(batch))
+            progress(ProgressEvent(Phase.DETAILS, index + 1, total, f"Done · {name}"))
 
         return EnrichSummary(
             fetched=fetched,
@@ -112,12 +116,14 @@ class EnrichListingsUseCase:
             failed=tuple(failed),
         )
 
-    def _candidates(self, command: EnrichCommand) -> list[ListingId]:
+    def _candidates(self, command: EnrichCommand) -> tuple[list[ListingId], dict[ListingId, str]]:
         """Your listing first, then the ``competitors`` nearest scanned listings."""
         distances: dict[ListingId, float] = {}
+        names: dict[ListingId, str] = {}
         for stay in command.stays:
             snapshot = self._repos.snapshots.latest(stay)
             for offer in snapshot.offers if snapshot else ():
+                names[offer.listing.id] = offer.listing.name
                 location = offer.listing.location
                 distances[offer.listing.id] = (
                     command.center.distance_km_to(location)
@@ -128,7 +134,7 @@ class EnrichListingsUseCase:
         nearest = [i for i in nearest if i not in command.priority_ids]
         if command.competitors is not None:
             nearest = nearest[: max(command.competitors, 0)]
-        return list(dict.fromkeys([*command.priority_ids, *nearest]))
+        return list(dict.fromkeys([*command.priority_ids, *nearest])), names
 
     def _plan(
         self, candidates: Sequence[ListingId], now: datetime, command: EnrichCommand
@@ -192,6 +198,13 @@ class EnrichListingsUseCase:
     def _fetch_reviews(self, listing_id: ListingId, now: datetime) -> None:
         reviews = self._gateways.reviews.get_reviews(listing_id)
         self._repos.reviews.save_reviews(listing_id, now, reviews)
+
+
+_PART_LABELS = {
+    EnrichPart.DETAILS: "Reading listing page",
+    EnrichPart.CALENDARS: "Reading calendar",
+    EnrichPart.REVIEWS: "Reading reviews",
+}
 
 
 def _is_stale(fetched_at: datetime | None, now: datetime, refresh: timedelta) -> bool:
