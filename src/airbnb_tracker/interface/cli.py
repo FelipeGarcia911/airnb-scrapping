@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import subprocess
 import sys
 import warnings
 from collections.abc import Callable, Sequence
@@ -26,6 +27,7 @@ from airbnb_tracker.application.use_cases import (
     EnrichPart,
     ExportQuery,
     ScanMarketCommand,
+    ScanSummary,
 )
 from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.domain.exceptions import DomainError
@@ -50,7 +52,7 @@ class TrackerCli:
     def scan(self, _args: argparse.Namespace) -> None:
         search = self._c.settings.search
         self._print(f"Searching {len(self._stays)} check-in / stay-length combinations…")
-        summaries = self._c.scan_market.execute(
+        self._c.scan_market.execute(
             ScanMarketCommand(
                 stays=self._stays,
                 currency=self._c.settings.scraping.currency,
@@ -61,12 +63,14 @@ class TrackerCli:
                 complete_coverage=search.complete_coverage,
                 max_listings=search.max_listings,
                 competitor_filter=self._c.competitor_filter(),
-            )
+            ),
+            on_progress=self._scan_progress,
         )
-        for s in summaries:
-            detail = f"ERROR: {s.error}" if s.error else f"{s.kept} listings (of {s.found})"
-            warning = "  [truncated by Airbnb: results may be incomplete]" if s.truncated else ""
-            self._print(f"  {s.stay}: {detail}{warning}")
+
+    def _scan_progress(self, s: ScanSummary, done: int, total: int) -> None:
+        detail = f"ERROR: {s.error}" if s.error else f"{s.kept} listings (of {s.found})"
+        warning = "  [truncated by Airbnb: results may be incomplete]" if s.truncated else ""
+        self._print(f"  [{done}/{total}] {s.stay}: {detail}{warning}")
 
     def enrich(self, args: argparse.Namespace) -> None:
         settings = self._c.settings
@@ -89,7 +93,10 @@ class TrackerCli:
                 details_refresh=settings.enrich.details_refresh,
                 calendar_refresh=settings.enrich.calendar_refresh,
                 reviews_refresh=settings.enrich.reviews_refresh,
-            )
+            ),
+            on_progress=lambda listing_id, done, total: self._print(
+                f"  [{done}/{total}] listing {listing_id}"
+            ),
         )
         fetched = " · ".join(f"{part.value}: {n}" for part, n in summary.fetched.items())
         self._print(
@@ -154,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     report = commands.add_parser("report", help="Print the market analysis")
     export = commands.add_parser("export", help="Export listings, pricing and calendar snapshots")
     run = commands.add_parser("run", help="scan + enrich + report + export")
+    commands.add_parser("ui", help="Open the web interface (Streamlit)")
     for sub in (report, run):
         sub.add_argument("--my-price", type=Decimal, help="Your nightly price (overrides config)")
     for sub in (export, run):
@@ -180,6 +188,8 @@ def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
     )
     if not args.verbose:
         warnings.filterwarnings("ignore", category=UserWarning)
+    if args.command == "ui":
+        return launch_ui(args.config)
     try:
         cli = TrackerCli(Container(load_settings(args.config), stream=out), out)
         handlers: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -197,6 +207,16 @@ def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
         print(f"Execution error: {error}", file=sys.stderr)
         return 2
     return 0
+
+
+def launch_ui(config: Path) -> int:
+    """Start the Streamlit app; it does not need a valid config to open."""
+    app = Path(__file__).parent / "web" / "app.py"
+    from airbnb_tracker.interface.web.theme import streamlit_flags  # noqa: PLC0415 - UI-only import
+
+    command = [sys.executable, "-m", "streamlit", "run", str(app), *streamlit_flags(),
+               "--", "--config", str(config.resolve())]  # fmt: skip
+    return subprocess.call(command)
 
 
 if __name__ == "__main__":

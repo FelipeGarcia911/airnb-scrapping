@@ -138,6 +138,26 @@ Useful options:
 | `enrich --max 100` | Visit up to 100 listings in this run. |
 | `-v` | Show detailed logs (failed requests, retries). |
 
+### Web interface
+
+```bash
+uv run airbnb-tracker ui        # opens http://localhost:8501
+```
+
+A local web app (Streamlit) with three tabs:
+
+- **Search setup**: your listing (paste its link and center the search on it), location and
+  radius or an Airbnb search URL, filters, stay lengths, check-in dates and number of
+  competitors. Shows how many searches it implies and the estimated run time, and saves
+  `config.yaml` with the same validation as the command line.
+- **Run**: start price scans, enrichment (pages, calendars, reviews), exports or everything,
+  in the background with live progress and logs. You can switch tabs or close the page.
+- **Results**: price percentiles per stay length with your position, availability and
+  minimum stay, a map of competitors, and every table filterable and downloadable as CSV.
+
+The app only listens on `localhost`. Saving from the UI rewrites `config.yaml` without
+comments; `config.example.yaml` keeps the documented version.
+
 ### Sample `report`
 
 ```
@@ -331,7 +351,9 @@ src/airbnb_tracker/
 │   ├── exporters/         Console, CSV and JSON
 │   ├── resilience.py      Request throttling and retries
 │   └── config.py          config.yaml loading and validation
-├── interface/cli.py   Command-line interface
+├── interface/
+│   ├── cli.py             Command-line interface
+│   └── web/               Streamlit UI (setup, run and results tabs)
 └── bootstrap.py       Composition root: wires everything together
 ```
 

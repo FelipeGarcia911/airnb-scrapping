@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pyairbnb>=2.2.2,<3",
     "pyyaml>=6.0",
+    "streamlit>=1.67.0",
 ]
 
 [project.scripts]
@@ -19,6 +20,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML",
+    "pandas-stubs>=3.1.0.261029",
 ]
 
 [build-system]

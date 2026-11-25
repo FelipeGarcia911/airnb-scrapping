@@ -70,10 +70,21 @@ class ScanMarketUseCase:
         self._clock = clock
         self._id_factory = id_factory
 
-    def execute(self, command: ScanMarketCommand) -> list[ScanSummary]:
+    def execute(
+        self,
+        command: ScanMarketCommand,
+        on_progress: Callable[[ScanSummary, int, int], None] | None = None,
+    ) -> list[ScanSummary]:
+        """Run every search; ``on_progress(summary, done, total)`` fires after each one."""
         run_id = self._id_factory()
         area, is_competitor = self._area_and_rule(command)
-        return [self._scan(run_id, command, stay, area, is_competitor) for stay in command.stays]
+        summaries = []
+        for done, stay in enumerate(command.stays, start=1):
+            summary = self._scan(run_id, command, stay, area, is_competitor)
+            summaries.append(summary)
+            if on_progress:
+                on_progress(summary, done, len(command.stays))
+        return summaries
 
     @staticmethod
     def _area_and_rule(

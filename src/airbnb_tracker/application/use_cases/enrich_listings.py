@@ -80,7 +80,12 @@ class EnrichListingsUseCase:
         self._repos = repositories
         self._clock = clock
 
-    def execute(self, command: EnrichCommand) -> EnrichSummary:
+    def execute(
+        self,
+        command: EnrichCommand,
+        on_progress: Callable[[ListingId, int, int], None] | None = None,
+    ) -> EnrichSummary:
+        """Enrich the batch; ``on_progress(listing_id, done, total)`` fires per listing."""
         now = self._clock.now()
         candidates = self._candidates(command)
         work = self._plan(candidates, now, command)
@@ -88,7 +93,7 @@ class EnrichListingsUseCase:
 
         fetched = dict.fromkeys(EnrichPart, 0)
         failed: list[ListingId] = []
-        for listing_id, parts in batch:
+        for done, (listing_id, parts) in enumerate(batch, start=1):
             ok = True
             for part in parts:
                 if self._fetch(part, listing_id, now):
@@ -97,6 +102,8 @@ class EnrichListingsUseCase:
                     ok = False
             if not ok:
                 failed.append(listing_id)
+            if on_progress:
+                on_progress(listing_id, done, len(batch))
 
         return EnrichSummary(
             fetched=fetched,

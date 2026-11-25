@@ -100,6 +100,11 @@ class AppSettings:
 
 
 def load_settings(path: Path) -> AppSettings:
+    return parse_settings(read_raw_config(path), base_dir=path.resolve().parent)
+
+
+def read_raw_config(path: Path) -> dict[str, Any]:
+    """The YAML document as plain data (used by the UI to pre-fill its form)."""
     if not path.is_file():
         raise ConfigurationError(
             f"{path} not found. Copy config.example.yaml to config.yaml and edit it."
@@ -108,8 +113,13 @@ def load_settings(path: Path) -> AppSettings:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as error:
         raise ConfigurationError(f"Invalid YAML in {path}: {error}") from error
-    if not isinstance(raw, Mapping):
+    if not isinstance(raw, dict):
         raise ConfigurationError("The configuration root must be a mapping")
+    return raw
+
+
+def parse_settings(raw: Mapping[str, Any], base_dir: Path) -> AppSettings:
+    """Validate plain configuration data; raises ConfigurationError with the reason."""
     try:
         return AppSettings(
             my_listing=_parse_my_listing(_section(raw, "my_listing")),
@@ -117,10 +127,18 @@ def load_settings(path: Path) -> AppSettings:
             stays=_parse_stays(_section(raw, "stays")),
             enrich=_parse_enrich(_section(raw, "enrich")),
             scraping=_parse_scraping(_section(raw, "scraping")),
-            storage=_parse_storage(_section(raw, "storage"), path.resolve().parent),
+            storage=_parse_storage(_section(raw, "storage"), base_dir),
         )
     except (DomainError, ValueError, TypeError, KeyError, InvalidOperation) as error:
         raise ConfigurationError(f"Invalid configuration: {error}") from error
+
+
+def save_raw_config(raw: Mapping[str, Any], path: Path) -> AppSettings:
+    """Validate, then write the configuration. Nothing is written if it is invalid."""
+    settings = parse_settings(raw, base_dir=path.resolve().parent)
+    header = "# Managed by the airbnb-tracker UI. See config.example.yaml for every option.\n"
+    path.write_text(header + yaml.safe_dump(dict(raw), sort_keys=False), encoding="utf-8")
+    return settings
 
 
 def _section(raw: Mapping[str, Any], name: str) -> Mapping[str, Any]:
