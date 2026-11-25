@@ -18,7 +18,7 @@ from typing import Any
 from airbnb_tracker.application.dto import ListingDetails
 from airbnb_tracker.domain.entities import Listing, ListingOffer, PriceQuote, RoomType
 from airbnb_tracker.domain.exceptions import DomainError
-from airbnb_tracker.domain.profile import Amenity, CalendarDay
+from airbnb_tracker.domain.profile import Amenity, CalendarDay, Review
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, Money, StayPeriod
 from airbnb_tracker.infrastructure.airbnb.text_parsing import parse_layout, parse_price_unit
 
@@ -190,6 +190,27 @@ def _amenities(groups: Iterable[RawData]) -> Iterator[Amenity]:
                     name=str(value["title"]),
                     category=str(group.get("title") or ""),
                 )
+
+
+class ReviewMapper:
+    """Keeps only id, date, rating and language: no reviewer data or review text."""
+
+    def to_reviews(self, listing_id: ListingId, raw: Iterable[RawData]) -> list[Review]:
+        reviews = []
+        for item in raw:
+            created = item.get("createdAt")
+            if not item.get("id") or not created:
+                continue
+            reviews.append(
+                Review(
+                    listing_id=listing_id,
+                    review_id=str(item["id"]),
+                    created_at=datetime.fromisoformat(str(created).replace("Z", "+00:00")),
+                    rating=_optional_int(item.get("rating")),
+                    language=str(item.get("language") or ""),
+                )
+            )
+        return reviews
 
 
 def _photo_urls(images: Iterable[object]) -> tuple[str, ...]:

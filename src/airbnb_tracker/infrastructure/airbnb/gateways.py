@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import math
+import warnings
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pyairbnb
+from pyairbnb import SearchResultsTruncatedWarning
 
-from airbnb_tracker.application.dto import ListingDetails, SearchCriteria
+from airbnb_tracker.application.dto import ListingDetails, SearchCriteria, SearchResult
 from airbnb_tracker.application.exceptions import GatewayError
 from airbnb_tracker.application.ports import Clock
-from airbnb_tracker.domain.entities import ListingOffer, RoomType
-from airbnb_tracker.domain.profile import CalendarDay
+from airbnb_tracker.domain.entities import RoomType
+from airbnb_tracker.domain.profile import CalendarDay, Review
 from airbnb_tracker.domain.value_objects import BoundingBox, ListingId, StayPeriod
 from airbnb_tracker.infrastructure.airbnb.mappers import (
     CalendarMapper,
     DetailsMapper,
+    ReviewMapper,
     SearchResultMapper,
 )
 
@@ -29,14 +34,23 @@ _PLACE_TYPE_FILTERS = {
 _MIN_ZOOM, _MAX_ZOOM = 10, 18
 
 
+RawResults = list[dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class RawSearch:
+    results: RawResults
+    truncated: bool = False
+
+
 class PyAirbnbClient(Protocol):
     """The slice of pyairbnb this project uses; tests inject a fake implementation."""
 
-    def search_all(self, **kwargs: Any) -> list[dict[str, Any]]: ...
+    def search_all(self, **kwargs: Any) -> RawSearch: ...
 
-    def search_all_from_url(
-        self, url: str, currency: str, proxy_url: str
-    ) -> list[dict[str, Any]]: ...
+    def search_all_from_url(self, url: str, currency: str, proxy_url: str) -> RawSearch: ...
+
+    def get_reviews(self, room_url: str, proxy_url: str) -> RawResults: ...
 
     def get_metadata(self, room_url: str, proxy_url: str) -> dict[str, Any]: ...
 
@@ -49,15 +63,18 @@ class DefaultPyAirbnbClient:
     def __init__(self) -> None:
         self._api_key: str | None = None
 
-    def search_all(self, **kwargs: Any) -> list[dict[str, Any]]:
-        return list(pyairbnb.search_all(**kwargs))
+    def search_all(self, **kwargs: Any) -> RawSearch:
+        return _watch_truncation(lambda: pyairbnb.search_all(**kwargs))
 
-    def search_all_from_url(self, url: str, currency: str, proxy_url: str) -> list[dict[str, Any]]:
-        return list(
-            pyairbnb.search_all_from_url(
+    def search_all_from_url(self, url: str, currency: str, proxy_url: str) -> RawSearch:
+        return _watch_truncation(
+            lambda: pyairbnb.search_all_from_url(
                 url, currency=currency, language=LANGUAGE, proxy_url=proxy_url
             )
         )
+
+    def get_reviews(self, room_url: str, proxy_url: str) -> RawResults:
+        return list(pyairbnb.get_reviews(room_url, LANGUAGE, proxy_url))
 
     def get_metadata(self, room_url: str, proxy_url: str) -> dict[str, Any]:
         data, _price_input, _cookies = pyairbnb.get_metadata_from_url(room_url, LANGUAGE, proxy_url)
@@ -91,12 +108,12 @@ class PyAirbnbSearchGateway:
         self._complete_coverage = complete_coverage
         self._client = client or DefaultPyAirbnbClient()
 
-    def search(self, criteria: SearchCriteria) -> list[ListingOffer]:
+    def search(self, criteria: SearchCriteria) -> SearchResult:
         try:
             if criteria.template_url:
-                raw_results = self._search_by_url(criteria.template_url, criteria)
+                raw = self._search_by_url(criteria.template_url, criteria)
             elif criteria.area:
-                raw_results = self._search_by_area(criteria.area, criteria)
+                raw = self._search_by_area(criteria.area, criteria)
             else:  # pragma: no cover - SearchCriteria forbids it
                 raise ValueError("criteria without area or template_url")
         except Exception as error:
@@ -104,14 +121,14 @@ class PyAirbnbSearchGateway:
 
         mapper = SearchResultMapper(criteria.currency, criteria.filters.room_type)
         captured_at = self._clock.now()
-        offers = (mapper.to_offer(raw, criteria.stay, captured_at) for raw in raw_results)
-        return [offer for offer in offers if offer is not None]
+        offers = (mapper.to_offer(item, criteria.stay, captured_at) for item in raw.results)
+        return SearchResult([o for o in offers if o is not None], truncated=raw.truncated)
 
-    def _search_by_url(self, template_url: str, criteria: SearchCriteria) -> list[dict[str, Any]]:
+    def _search_by_url(self, template_url: str, criteria: SearchCriteria) -> RawSearch:
         url = with_stay(template_url, criteria.stay, criteria.filters.guests)
         return self._client.search_all_from_url(url, criteria.currency, self._proxy_url)
 
-    def _search_by_area(self, area: BoundingBox, criteria: SearchCriteria) -> list[dict[str, Any]]:
+    def _search_by_area(self, area: BoundingBox, criteria: SearchCriteria) -> RawSearch:
         stay, filters = criteria.stay, criteria.filters
         return self._client.search_all(
             check_in=stay.check_in.isoformat(),
@@ -175,6 +192,37 @@ class PyAirbnbCalendarGateway:
             return self._mapper.to_days(months)
         except Exception as error:
             raise GatewayError(f"Could not load calendar of {listing_id}: {error}") from error
+
+
+class PyAirbnbReviewGateway:
+    def __init__(
+        self,
+        *,
+        proxy_url: str = "",
+        client: PyAirbnbClient | None = None,
+        mapper: ReviewMapper | None = None,
+    ) -> None:
+        self._proxy_url = proxy_url
+        self._client = client or DefaultPyAirbnbClient()
+        self._mapper = mapper or ReviewMapper()
+
+    def get_reviews(self, listing_id: ListingId) -> list[Review]:
+        try:
+            raw = self._client.get_reviews(
+                f"https://www.airbnb.com/rooms/{listing_id}", self._proxy_url
+            )
+            return self._mapper.to_reviews(listing_id, raw)
+        except Exception as error:
+            raise GatewayError(f"Could not load reviews of {listing_id}: {error}") from error
+
+
+def _watch_truncation(search: Callable[[], Iterable[dict[str, Any]]]) -> RawSearch:
+    """Run a pyairbnb search, turning its page-cap warning into a flag."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        results = list(search())
+    truncated = any(issubclass(w.category, SearchResultsTruncatedWarning) for w in caught)
+    return RawSearch(results, truncated)
 
 
 def with_stay(url: str, stay: StayPeriod, guests: int) -> str:

@@ -11,6 +11,7 @@ It answers questions such as:
 - How booked are their calendars and what minimum stay do they require?
 - Where does my price sit in the market (percentile)?
 - How much more do listings with a pool, air conditioning or parking charge?
+- How active are competitors (recent reviews as a proxy for completed stays)?
 
 > Built for analysing **your own market** (tens or hundreds of listings), not for mass
 > scraping. It pauses between requests and retries with exponential backoff.
@@ -35,9 +36,10 @@ It answers questions such as:
 1. **`scan`** searches Airbnb with your location and filters for **every combination of
    stay length** (7, 14, 20, 28, 30, 60, 90 nights) **and check-in date** (one every 30 days
    over the next 6 months). It stores each listing's price and its position in the results.
-2. **`enrich`** visits the page and calendar of every listing found (and of yours). It is
-   incremental: listing pages are refreshed every 7 days, calendars every 2 days, and each
-   run processes at most a configurable number of listings; the rest wait for the next run.
+2. **`enrich`** visits the page, calendar and reviews of your listing and of the N nearest
+   competitors (`enrich.competitors`, 50 by default). It is incremental: listing pages and
+   reviews are refreshed every 7 days, calendars every 2 days, and each run processes at most
+   `max_listings_per_run` listings; the rest wait for the next run.
 3. **`report`** prints a summary to the console.
 4. **`export`** writes the three analysis files.
 
@@ -75,6 +77,7 @@ search:
   radius_km: 6
   url: null                # alternative: an airbnb.com search URL with your filters
   complete_coverage: true  # splits the area so no listings are missed (~15% more results)
+  max_listings: 50         # keep only the 50 nearest listings per search (null = all)
   guests: 2
   room_type: entire_place  # entire_place | private_room | null
   min_bedrooms: 2
@@ -88,9 +91,11 @@ stays:
   horizon_days: 180        # ...over 6 months
 
 enrich:
-  max_listings_per_run: 50
+  competitors: 50          # enrich only the 50 nearest competitors (null = all found)
+  max_listings_per_run: 51
   details_refresh_days: 7
   calendar_refresh_days: 2
+  reviews_refresh_days: 7
   availability_window_days: 60
 
 scraping:
@@ -128,6 +133,9 @@ Useful options:
 |---|---|
 | `-c path/config.yaml` | Use another configuration file (also `AIRBNB_TRACKER_CONFIG`). |
 | `report --my-price 175000` | Try another price of your own without editing the config. |
+| `enrich --top 20` | Enrich only the 20 nearest competitors. |
+| `enrich --only calendars` | Fetch only one kind of data: `details`, `calendars` or `reviews` (repeatable). |
+| `enrich --max 100` | Visit up to 100 listings in this run. |
 | `-v` | Show detailed logs (failed requests, retries). |
 
 ### Sample `report`
@@ -156,7 +164,11 @@ Calendars of 120 competitors (next 60 days):
 | Step | Full configuration |
 |---|---|
 | `scan` | 42 searches (7 stay lengths × 6 dates): roughly 5–10 min |
-| `enrich` | 2 requests per listing, 50 listings per run: ~5 min |
+| `enrich` | 3 requests per listing (page, calendar, reviews): ~10 min for 50 listings |
+
+To go faster, reduce `stays.durations`, set `every_days: 90` (2 check-in dates), use a smaller
+`radius_km`, or run `enrich --only calendars` when you only need availability and minimum stay.
+Interrupting with Ctrl+C is safe: every listing is saved as soon as it is fetched.
 
 The first time, `enrich` needs several runs to cover every listing; afterwards it only
 refreshes what has expired.
@@ -165,7 +177,9 @@ refreshes what has expired.
 
 ## Exported data
 
-`export` writes three files (CSV or JSON) to `exports/` with the **full history**:
+`export` writes five files (CSV or JSON) to `exports/` with the **full history**. Only your
+listing and the N nearest competitors are enriched; filter `listings` on `details_collected_at`
+to keep just those.
 
 ### `listings` — one row per listing
 
@@ -181,6 +195,7 @@ refreshes what has expired.
 | `is_superhost`, `is_guest_favorite` | Badges |
 | `amenities` | Amenity list (pipe-separated ` \| ` in CSV) |
 | `photos` | Photo URLs |
+| `last_review_at`, `reviews_last_90_days` | Latest review and recent review count (activity proxy) |
 | `details_collected_at` | When the listing page was read |
 
 ### `pricing_snapshots` — one row per listing × search
@@ -205,6 +220,23 @@ refreshes what has expired.
 | `available` | Whether the day could be booked |
 | `minimum_nights` | Minimum stay required for that day |
 
+### `reviews` — one row per review
+
+| Field | Description |
+|---|---|
+| `listing_id`, `review_id` | Listing and review identifiers |
+| `created_at` | Review date |
+| `rating`, `language` | Star rating and language |
+
+Reviewer names, photos and review texts are deliberately **not** stored (personal data).
+
+### `search_runs` — one row per search
+
+Parameters (dates, guests, filters, center, radius or URL), `results_found`, `results_kept`,
+`duration_seconds`, `truncated` (Airbnb hit its page cap, results may be incomplete) and
+`error`. Useful to evaluate how well each query covers the market. The number of result pages
+is not available: pyairbnb does not expose it.
+
 ### SQLite database
 
 Everything is also stored in `data/airbnb.db`, with two ready-to-query views:
@@ -217,6 +249,8 @@ sqlite3 data/airbnb.db "
 
 - `v_pricing`: prices with nights, nightly price and search position.
 - `v_calendar`: day-by-day calendars.
+
+Reviews and search runs live in the `reviews` and `search_runs` tables.
 
 ### Analysis example with pandas
 
@@ -241,8 +275,9 @@ month.groupby(has_pool)["nightly_price"].median()
 ## Known limitations
 
 - **`total_price` excludes cleaning fee, service fee and taxes.** Airbnb does not expose
-  those charges in search results or price lookups without starting a booking. It is the
-  stay price with discounts applied.
+  those charges in search results or in the listing price lookup (verified on several
+  listings: only nights × rate and discounts are returned). It is the stay price with
+  discounts applied.
 - **Stays of 28+ nights** are shown by Airbnb as an *average monthly price*; the tool converts
   it to the stay total (60 nights = 2 months).
 - **"Unavailable" is not "booked"**: it may be a booking, a host block or a stay restriction.
@@ -254,7 +289,6 @@ month.groupby(has_pool)["nightly_price"].median()
   (`uv lock --upgrade-package pyairbnb && uv sync`).
 - Responses are requested in English because parsing ("for 7 nights", "2 bedrooms") depends
   on it.
-- Reviews (`reviews[]`) are not extracted yet.
 
 > **Responsible use**: Airbnb's terms of service restrict automated extraction. Use this tool
 > sparingly, for internal analysis, without collecting personal data of hosts or guests,

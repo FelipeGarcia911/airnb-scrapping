@@ -12,15 +12,15 @@ import time
 from collections.abc import Callable
 from typing import TypeVar
 
-from airbnb_tracker.application.dto import ListingDetails, SearchCriteria
+from airbnb_tracker.application.dto import ListingDetails, SearchCriteria, SearchResult
 from airbnb_tracker.application.exceptions import GatewayError
 from airbnb_tracker.application.ports import (
     CalendarGateway,
     ListingDetailsGateway,
     ListingSearchGateway,
+    ReviewGateway,
 )
-from airbnb_tracker.domain.entities import ListingOffer
-from airbnb_tracker.domain.profile import CalendarDay
+from airbnb_tracker.domain.profile import CalendarDay, Review
 from airbnb_tracker.domain.value_objects import ListingId
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ class ResilientSearchGateway:
         self._inner = inner
         self._guard = guard
 
-    def search(self, criteria: SearchCriteria) -> list[ListingOffer]:
+    def search(self, criteria: SearchCriteria) -> SearchResult:
         return self._guard.call(lambda: self._inner.search(criteria))
 
 
@@ -121,3 +121,12 @@ class ResilientCalendarGateway:
 
     def get_calendar(self, listing_id: ListingId) -> list[CalendarDay]:
         return self._guard.call(lambda: self._inner.get_calendar(listing_id))
+
+
+class ResilientReviewGateway:
+    def __init__(self, inner: ReviewGateway, guard: RequestGuard) -> None:
+        self._inner = inner
+        self._guard = guard
+
+    def get_reviews(self, listing_id: ListingId) -> list[Review]:
+        return self._guard.call(lambda: self._inner.get_reviews(listing_id))

@@ -7,12 +7,20 @@ import json
 import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from airbnb_tracker.application.dto import SearchFilters, SearchRun
 from airbnb_tracker.domain.entities import Listing, ListingOffer, PriceQuote, RoomType, Snapshot
-from airbnb_tracker.domain.profile import Amenity, CalendarDay, CalendarSnapshot, ListingProfile
+from airbnb_tracker.domain.profile import (
+    Amenity,
+    CalendarDay,
+    CalendarSnapshot,
+    ListingProfile,
+    Review,
+)
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, Money, StayPeriod
 
 _LISTING_COLUMNS_DDL = """
@@ -96,6 +104,44 @@ SELECT o.listing_id, s.captured_at, s.check_in, s.check_out,
        o.search_position
 FROM offers o JOIN snapshots s ON s.id = o.snapshot_id;
 
+CREATE TABLE IF NOT EXISTS reviews (
+    review_id  TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    rating     INTEGER,
+    language   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_reviews_listing ON reviews (listing_id, created_at);
+
+CREATE TABLE IF NOT EXISTS review_fetches (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id   TEXT    NOT NULL,
+    fetched_at   TEXT    NOT NULL,
+    review_count INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_review_fetches ON review_fetches (listing_id, fetched_at);
+
+CREATE TABLE IF NOT EXISTS search_runs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            TEXT    NOT NULL,
+    started_at        TEXT    NOT NULL,
+    finished_at       TEXT    NOT NULL,
+    check_in          TEXT    NOT NULL,
+    check_out         TEXT    NOT NULL,
+    guests            INTEGER NOT NULL,
+    currency          TEXT    NOT NULL,
+    filters           TEXT    NOT NULL,
+    latitude          REAL,
+    longitude         REAL,
+    radius_km         REAL,
+    url               TEXT,
+    complete_coverage INTEGER NOT NULL,
+    results_found     INTEGER NOT NULL,
+    results_kept      INTEGER NOT NULL,
+    truncated         INTEGER NOT NULL,
+    error             TEXT
+);
+
 CREATE VIEW IF NOT EXISTS v_calendar AS
 SELECT c.listing_id, c.captured_at, d.day, d.available, d.min_nights
 FROM calendar_days d JOIN calendar_snapshots c ON c.id = d.calendar_id;
@@ -111,7 +157,7 @@ _PROFILE_COLUMNS = ("captured_at", *_LISTING_COLUMNS, "description", "person_cap
 
 
 class SqliteRepository:
-    """Implements SnapshotRepository, ProfileRepository and CalendarRepository."""
+    """Implements every repository port: snapshots, profiles, calendars, reviews, runs."""
 
     def __init__(self, database_path: Path | str) -> None:
         self._path = str(database_path)
@@ -256,6 +302,77 @@ class SqliteRepository:
             for h in headers
         ]
 
+    # --- reviews ------------------------------------------------------------------------
+    def save_reviews(
+        self, listing_id: ListingId, fetched_at: datetime, reviews: Sequence[Review]
+    ) -> None:
+        with self._connection() as connection:
+            connection.executemany(
+                "INSERT OR IGNORE INTO reviews (review_id, listing_id, created_at, rating, "
+                "language) VALUES (?, ?, ?, ?, ?)",
+                [
+                    (r.review_id, str(r.listing_id), r.created_at.isoformat(), r.rating, r.language)
+                    for r in reviews
+                ],
+            )
+            connection.execute(
+                _insert("review_fetches", ("listing_id", "fetched_at", "review_count")),
+                (str(listing_id), fetched_at.isoformat(), len(reviews)),
+            )
+
+    def latest_review_fetches(self) -> dict[ListingId, datetime]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT listing_id, MAX(fetched_at) AS fetched_at FROM review_fetches "
+                "GROUP BY listing_id"
+            ).fetchall()
+        return {ListingId(r["listing_id"]): datetime.fromisoformat(r["fetched_at"]) for r in rows}
+
+    def all_reviews(self) -> list[Review]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM reviews ORDER BY listing_id, created_at"
+            ).fetchall()
+        return [
+            Review(
+                listing_id=ListingId(r["listing_id"]),
+                review_id=r["review_id"],
+                created_at=datetime.fromisoformat(r["created_at"]),
+                rating=_opt_int(r["rating"]),
+                language=r["language"],
+            )
+            for r in rows
+        ]
+
+    # --- search runs --------------------------------------------------------------------
+    def add_run(self, run: SearchRun) -> None:
+        values = {
+            "run_id": run.run_id,
+            "started_at": run.started_at.isoformat(),
+            "finished_at": run.finished_at.isoformat(),
+            "check_in": run.stay.check_in.isoformat(),
+            "check_out": run.stay.check_out.isoformat(),
+            "guests": run.guests,
+            "currency": run.currency,
+            "filters": json.dumps(_filters_to_dict(run.filters)),
+            "latitude": run.center.latitude if run.center else None,
+            "longitude": run.center.longitude if run.center else None,
+            "radius_km": run.radius_km,
+            "url": run.url,
+            "complete_coverage": int(run.complete_coverage),
+            "results_found": run.results_found,
+            "results_kept": run.results_kept,
+            "truncated": int(run.truncated),
+            "error": run.error,
+        }
+        with self._connection() as connection:
+            connection.execute(_insert("search_runs", tuple(values)), tuple(values.values()))
+
+    def all_runs(self) -> list[SearchRun]:
+        with self._connection() as connection:
+            rows = connection.execute("SELECT * FROM search_runs ORDER BY id").fetchall()
+        return [_row_to_run(r) for r in rows]
+
     # --- connection handling ------------------------------------------------------------
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -349,6 +466,35 @@ def _row_to_offer(
         captured_at=captured_at,
     )
     return ListingOffer(listing, quote)
+
+
+def _filters_to_dict(filters: SearchFilters) -> dict[str, object]:
+    values = asdict(filters)
+    values["room_type"] = filters.room_type.value if filters.room_type else None
+    return values
+
+
+def _row_to_run(row: sqlite3.Row) -> SearchRun:
+    filters = json.loads(row["filters"])
+    room_type = filters.pop("room_type", None)
+    latitude, longitude = row["latitude"], row["longitude"]
+    return SearchRun(
+        run_id=row["run_id"],
+        started_at=datetime.fromisoformat(row["started_at"]),
+        finished_at=datetime.fromisoformat(row["finished_at"]),
+        stay=StayPeriod(date.fromisoformat(row["check_in"]), date.fromisoformat(row["check_out"])),
+        guests=row["guests"],
+        currency=row["currency"],
+        filters=SearchFilters(room_type=RoomType(room_type) if room_type else None, **filters),
+        center=GeoPoint(latitude, longitude) if latitude is not None else None,
+        radius_km=_opt_float(row["radius_km"]),
+        url=row["url"],
+        complete_coverage=bool(row["complete_coverage"]),
+        results_found=row["results_found"],
+        results_kept=row["results_kept"],
+        truncated=bool(row["truncated"]),
+        error=row["error"],
+    )
 
 
 def _opt_int(value: object) -> int | None:

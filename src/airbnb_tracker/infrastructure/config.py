@@ -40,6 +40,7 @@ class SearchSettings:
     radius_km: float = 5.0
     url: str | None = None
     complete_coverage: bool = True
+    max_listings: int | None = None
     filters: SearchFilters = field(default_factory=SearchFilters)
     max_bedrooms: int | None = None
     min_rating: float | None = None
@@ -65,9 +66,11 @@ class StaySettings:
 
 @dataclass(frozen=True, slots=True)
 class EnrichSettings:
+    competitors: int | None = 50
     max_listings_per_run: int = 50
     details_refresh: timedelta = timedelta(days=7)
     calendar_refresh: timedelta = timedelta(days=2)
+    reviews_refresh: timedelta = timedelta(days=7)
     availability_window_days: int = 60
 
 
@@ -152,6 +155,7 @@ def _parse_search(raw: Mapping[str, Any]) -> SearchSettings:
         radius_km=radius,
         url=str(url) if url else None,
         complete_coverage=bool(raw.get("complete_coverage", True)),
+        max_listings=_opt(int, raw.get("max_listings")),
         filters=SearchFilters(
             guests=guests,
             room_type=RoomType(room_type) if room_type else None,
@@ -183,9 +187,11 @@ def _parse_stays(raw: Mapping[str, Any]) -> StaySettings:
 def _parse_enrich(raw: Mapping[str, Any]) -> EnrichSettings:
     defaults = EnrichSettings()
     return EnrichSettings(
+        competitors=_opt(int, raw.get("competitors", defaults.competitors)),
         max_listings_per_run=int(raw.get("max_listings_per_run", defaults.max_listings_per_run)),
         details_refresh=timedelta(days=float(raw.get("details_refresh_days", 7))),
         calendar_refresh=timedelta(days=float(raw.get("calendar_refresh_days", 2))),
+        reviews_refresh=timedelta(days=float(raw.get("reviews_refresh_days", 7))),
         availability_window_days=int(
             raw.get("availability_window_days", defaults.availability_window_days)
         ),

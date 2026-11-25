@@ -6,15 +6,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from airbnb_tracker.domain.entities import Listing, RoomType, Snapshot
+from airbnb_tracker.domain.entities import Listing, ListingOffer, RoomType, Snapshot
 from airbnb_tracker.domain.market_analysis import PriceDistribution, PricePosition
 from airbnb_tracker.domain.profile import (
     Amenity,
     AvailabilitySummary,
     CalendarSnapshot,
     ListingProfile,
+    Review,
 )
-from airbnb_tracker.domain.value_objects import BoundingBox, Money, StayPeriod
+from airbnb_tracker.domain.value_objects import BoundingBox, GeoPoint, Money, StayPeriod
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,33 @@ class SearchCriteria:
     def __post_init__(self) -> None:
         if (self.area is None) == (self.template_url is None):
             raise ValueError("SearchCriteria needs exactly one of area or template_url")
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    offers: list[ListingOffer]
+    truncated: bool = False  # Airbnb hit its page cap: results may be incomplete
+
+
+@dataclass(frozen=True, slots=True)
+class SearchRun:
+    """Audit record of one search, to evaluate how well queries cover the market."""
+
+    run_id: str
+    started_at: datetime
+    finished_at: datetime
+    stay: StayPeriod
+    guests: int
+    currency: str
+    filters: SearchFilters
+    center: GeoPoint | None
+    radius_km: float | None
+    url: str | None
+    complete_coverage: bool
+    results_found: int
+    results_kept: int
+    truncated: bool
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +124,8 @@ class ListingRecord:
     distance_km: float | None
     profile: ListingProfile | None
     minimum_nights: int | None
+    last_review_at: datetime | None = None
+    reviews_last_90_days: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,3 +135,5 @@ class Dataset:
     listings: tuple[ListingRecord, ...]
     snapshots: tuple[Snapshot, ...]
     calendars: tuple[CalendarSnapshot, ...]
+    reviews: tuple[Review, ...] = ()
+    search_runs: tuple[SearchRun, ...] = ()

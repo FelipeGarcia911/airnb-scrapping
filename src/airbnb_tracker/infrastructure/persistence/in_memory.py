@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import datetime
+
+from airbnb_tracker.application.dto import SearchRun
 from airbnb_tracker.domain.entities import Snapshot
-from airbnb_tracker.domain.profile import CalendarSnapshot, ListingProfile
+from airbnb_tracker.domain.profile import CalendarSnapshot, ListingProfile, Review
 from airbnb_tracker.domain.value_objects import ListingId, StayPeriod
 
 
@@ -12,6 +16,9 @@ class InMemoryRepository:
         self._snapshots: list[Snapshot] = []
         self._profiles: list[ListingProfile] = []
         self._calendars: list[CalendarSnapshot] = []
+        self._reviews: dict[str, Review] = {}
+        self._review_fetches: dict[ListingId, datetime] = {}
+        self._runs: list[SearchRun] = []
 
     def add(self, snapshot: Snapshot) -> None:
         self._snapshots.append(snapshot)
@@ -27,19 +34,32 @@ class InMemoryRepository:
         self._profiles.append(profile)
 
     def latest_profiles(self) -> dict[ListingId, ListingProfile]:
-        latest: dict[ListingId, ListingProfile] = {}
-        for profile in sorted(self._profiles, key=lambda p: p.captured_at):
-            latest[profile.listing_id] = profile
-        return latest
+        return {p.listing_id: p for p in sorted(self._profiles, key=lambda p: p.captured_at)}
 
     def save_calendar(self, calendar: CalendarSnapshot) -> None:
         self._calendars.append(calendar)
 
     def latest_calendars(self) -> dict[ListingId, CalendarSnapshot]:
-        latest: dict[ListingId, CalendarSnapshot] = {}
-        for calendar in sorted(self._calendars, key=lambda c: c.captured_at):
-            latest[calendar.listing_id] = calendar
-        return latest
+        return {c.listing_id: c for c in sorted(self._calendars, key=lambda c: c.captured_at)}
 
     def all_calendars(self) -> list[CalendarSnapshot]:
         return list(self._calendars)
+
+    def save_reviews(
+        self, listing_id: ListingId, fetched_at: datetime, reviews: Sequence[Review]
+    ) -> None:
+        for review in reviews:
+            self._reviews.setdefault(review.review_id, review)
+        self._review_fetches[listing_id] = fetched_at
+
+    def latest_review_fetches(self) -> dict[ListingId, datetime]:
+        return dict(self._review_fetches)
+
+    def all_reviews(self) -> list[Review]:
+        return sorted(self._reviews.values(), key=lambda r: (r.listing_id.value, r.created_at))
+
+    def add_run(self, run: SearchRun) -> None:
+        self._runs.append(run)
+
+    def all_runs(self) -> list[SearchRun]:
+        return list(self._runs)

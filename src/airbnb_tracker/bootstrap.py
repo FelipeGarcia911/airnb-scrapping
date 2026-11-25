@@ -16,11 +16,15 @@ from airbnb_tracker.application.ports import (
     ListingDetailsGateway,
     ListingSearchGateway,
     ReportExporter,
+    ReviewGateway,
 )
 from airbnb_tracker.application.use_cases import (
     BuildMarketReportUseCase,
+    EnrichGateways,
     EnrichListingsUseCase,
+    EnrichRepositories,
     ExportDatasetUseCase,
+    ExportSources,
     ScanMarketUseCase,
 )
 from airbnb_tracker.domain.specifications import (
@@ -36,6 +40,7 @@ from airbnb_tracker.infrastructure.airbnb import (
     DefaultPyAirbnbClient,
     PyAirbnbCalendarGateway,
     PyAirbnbDetailsGateway,
+    PyAirbnbReviewGateway,
     PyAirbnbSearchGateway,
 )
 from airbnb_tracker.infrastructure.clock import SystemClock
@@ -47,6 +52,7 @@ from airbnb_tracker.infrastructure.resilience import (
     RequestGuard,
     ResilientCalendarGateway,
     ResilientDetailsGateway,
+    ResilientReviewGateway,
     ResilientSearchGateway,
     RetryPolicy,
 )
@@ -62,6 +68,7 @@ class Container:
         search_gateway: ListingSearchGateway | None = None,
         details_gateway: ListingDetailsGateway | None = None,
         calendar_gateway: CalendarGateway | None = None,
+        review_gateway: ReviewGateway | None = None,
         stream: TextIO | None = None,
     ) -> None:
         self.settings = settings
@@ -70,6 +77,7 @@ class Container:
         self._search_gateway = search_gateway
         self._details_gateway = details_gateway
         self._calendar_gateway = calendar_gateway
+        self._review_gateway = review_gateway
         self._stream = stream
 
     # --- infrastructure -------------------------------------------------------------
@@ -118,6 +126,14 @@ class Container:
         inner = PyAirbnbCalendarGateway(proxy_url=proxy, client=self._client)
         return ResilientCalendarGateway(inner, self._guard)
 
+    @cached_property
+    def review_gateway(self) -> ReviewGateway:
+        if self._review_gateway:
+            return self._review_gateway
+        proxy = self.settings.scraping.proxy_url
+        inner = PyAirbnbReviewGateway(proxy_url=proxy, client=self._client)
+        return ResilientReviewGateway(inner, self._guard)
+
     def report_exporter(self) -> ReportExporter:
         return ConsoleReportExporter(self._stream)
 
@@ -144,18 +160,16 @@ class Container:
     # --- use cases ------------------------------------------------------------------
     @cached_property
     def scan_market(self) -> ScanMarketUseCase:
-        return ScanMarketUseCase(self.search_gateway, self.repository, self.clock)
+        repo = self.repository
+        return ScanMarketUseCase(self.search_gateway, repo, repo, self.clock)
 
     @cached_property
     def enrich_listings(self) -> EnrichListingsUseCase:
         repo = self.repository
         return EnrichListingsUseCase(
-            self.details_gateway,
-            self.calendar_gateway,
-            snapshots=repo,
-            profiles=repo,
-            calendars=repo,
-            clock=self.clock,
+            EnrichGateways(self.details_gateway, self.calendar_gateway, self.review_gateway),
+            EnrichRepositories(snapshots=repo, profiles=repo, calendars=repo, reviews=repo),
+            self.clock,
         )
 
     @cached_property
@@ -165,4 +179,6 @@ class Container:
     @cached_property
     def export_dataset(self) -> ExportDatasetUseCase:
         repo = self.repository
-        return ExportDatasetUseCase(repo, repo, repo)
+        return ExportDatasetUseCase(
+            ExportSources(snapshots=repo, profiles=repo, calendars=repo, reviews=repo, runs=repo)
+        )

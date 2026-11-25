@@ -1,15 +1,17 @@
-"""Use case: fetch listing pages (weekly) and calendars (every few days).
+"""Use case: fetch listing pages, calendars and reviews for the listings found by scans.
 
-Two requests per listing, so the work is incremental: anything fresher than its
-refresh interval is skipped and at most ``max_listings`` listings are visited per run.
+Each kind of data has its own refresh interval (pages and reviews weekly, calendars every
+few days). The work is incremental: fresh data is skipped, your own listing goes first,
+then competitors from nearest to farthest, and at most ``max_listings`` are visited per run.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 from airbnb_tracker.application.exceptions import GatewayError
 from airbnb_tracker.application.ports import (
@@ -18,48 +20,64 @@ from airbnb_tracker.application.ports import (
     Clock,
     ListingDetailsGateway,
     ProfileRepository,
+    ReviewGateway,
+    ReviewRepository,
     SnapshotRepository,
 )
 from airbnb_tracker.domain.profile import CalendarSnapshot, ListingProfile
-from airbnb_tracker.domain.value_objects import ListingId, StayPeriod
+from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, StayPeriod
 
 logger = logging.getLogger(__name__)
+
+
+class EnrichPart(StrEnum):
+    DETAILS = "details"
+    CALENDARS = "calendars"
+    REVIEWS = "reviews"
 
 
 @dataclass(frozen=True, slots=True)
 class EnrichCommand:
     stays: Sequence[StayPeriod]
     priority_ids: Sequence[ListingId] = ()
+    center: GeoPoint | None = None
+    parts: frozenset[EnrichPart] = field(default_factory=lambda: frozenset(EnrichPart))
+    competitors: int | None = 50  # only the N nearest competitors (None = all)
     max_listings: int = 50
     details_refresh: timedelta = timedelta(days=7)
     calendar_refresh: timedelta = timedelta(days=2)
+    reviews_refresh: timedelta = timedelta(days=7)
 
 
 @dataclass(frozen=True, slots=True)
 class EnrichSummary:
-    details_fetched: int
-    calendars_fetched: int
+    fetched: dict[EnrichPart, int]
     up_to_date: int
     pending: int
     failed: tuple[ListingId, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class EnrichGateways:
+    details: ListingDetailsGateway
+    calendars: CalendarGateway
+    reviews: ReviewGateway
+
+
+@dataclass(frozen=True, slots=True)
+class EnrichRepositories:
+    snapshots: SnapshotRepository
+    profiles: ProfileRepository
+    calendars: CalendarRepository
+    reviews: ReviewRepository
+
+
 class EnrichListingsUseCase:
     def __init__(
-        self,
-        details_gateway: ListingDetailsGateway,
-        calendar_gateway: CalendarGateway,
-        *,
-        snapshots: SnapshotRepository,
-        profiles: ProfileRepository,
-        calendars: CalendarRepository,
-        clock: Clock,
+        self, gateways: EnrichGateways, repositories: EnrichRepositories, clock: Clock
     ) -> None:
-        self._details = details_gateway
-        self._calendar = calendar_gateway
-        self._snapshots = snapshots
-        self._profiles = profiles
-        self._calendars = calendars
+        self._gateways = gateways
+        self._repos = repositories
         self._clock = clock
 
     def execute(self, command: EnrichCommand) -> EnrichSummary:
@@ -68,57 +86,88 @@ class EnrichListingsUseCase:
         work = self._plan(candidates, now, command)
         batch = work[: max(command.max_listings, 0)]
 
-        details_fetched = calendars_fetched = 0
+        fetched = dict.fromkeys(EnrichPart, 0)
         failed: list[ListingId] = []
-        for task in batch:
-            details_ok = not task.details or self._fetch_details(task.listing_id, now)
-            calendar_ok = not task.calendar or self._fetch_calendar(task.listing_id, now)
-            details_fetched += int(task.details and details_ok)
-            calendars_fetched += int(task.calendar and calendar_ok)
-            if not (details_ok and calendar_ok):
-                failed.append(task.listing_id)
+        for listing_id, parts in batch:
+            ok = True
+            for part in parts:
+                if self._fetch(part, listing_id, now):
+                    fetched[part] += 1
+                else:
+                    ok = False
+            if not ok:
+                failed.append(listing_id)
 
         return EnrichSummary(
-            details_fetched=details_fetched,
-            calendars_fetched=calendars_fetched,
+            fetched=fetched,
             up_to_date=len(candidates) - len(work),
             pending=len(work) - len(batch),
             failed=tuple(failed),
         )
 
+    def _candidates(self, command: EnrichCommand) -> list[ListingId]:
+        """Your listing first, then the ``competitors`` nearest scanned listings."""
+        distances: dict[ListingId, float] = {}
+        for stay in command.stays:
+            snapshot = self._repos.snapshots.latest(stay)
+            for offer in snapshot.offers if snapshot else ():
+                location = offer.listing.location
+                distances[offer.listing.id] = (
+                    command.center.distance_km_to(location)
+                    if command.center and location
+                    else float("inf")
+                )
+        nearest = sorted(distances, key=lambda listing_id: distances[listing_id])
+        nearest = [i for i in nearest if i not in command.priority_ids]
+        if command.competitors is not None:
+            nearest = nearest[: max(command.competitors, 0)]
+        return list(dict.fromkeys([*command.priority_ids, *nearest]))
+
     def _plan(
         self, candidates: Sequence[ListingId], now: datetime, command: EnrichCommand
-    ) -> list[_Task]:
-        profiles = self._profiles.latest_profiles()
-        calendars = self._calendars.latest_calendars()
-        tasks = []
+    ) -> list[tuple[ListingId, list[EnrichPart]]]:
+        last_fetch = {
+            EnrichPart.DETAILS: {
+                i: p.captured_at for i, p in self._repos.profiles.latest_profiles().items()
+            },
+            EnrichPart.CALENDARS: {
+                i: c.captured_at for i, c in self._repos.calendars.latest_calendars().items()
+            },
+            EnrichPart.REVIEWS: self._repos.reviews.latest_review_fetches(),
+        }
+        refresh = {
+            EnrichPart.DETAILS: command.details_refresh,
+            EnrichPart.CALENDARS: command.calendar_refresh,
+            EnrichPart.REVIEWS: command.reviews_refresh,
+        }
+        work = []
         for listing_id in candidates:
-            profile, calendar = profiles.get(listing_id), calendars.get(listing_id)
-            profile_at = profile.captured_at if profile else None
-            calendar_at = calendar.captured_at if calendar else None
-            task = _Task(
-                listing_id,
-                details=_is_stale(profile_at, now, command.details_refresh),
-                calendar=_is_stale(calendar_at, now, command.calendar_refresh),
-            )
-            if task.details or task.calendar:
-                tasks.append(task)
-        return tasks
+            parts = [
+                part
+                for part in EnrichPart
+                if part in command.parts
+                and _is_stale(last_fetch[part].get(listing_id), now, refresh[part])
+            ]
+            if parts:
+                work.append((listing_id, parts))
+        return work
 
-    def _candidates(self, command: EnrichCommand) -> list[ListingId]:
-        ids: dict[ListingId, None] = dict.fromkeys(command.priority_ids)
-        for stay in command.stays:
-            if snapshot := self._snapshots.latest(stay):
-                ids.update(dict.fromkeys(o.listing.id for o in snapshot.offers))
-        return list(ids)
-
-    def _fetch_details(self, listing_id: ListingId, now: datetime) -> bool:
+    def _fetch(self, part: EnrichPart, listing_id: ListingId, now: datetime) -> bool:
+        fetchers: dict[EnrichPart, Callable[[ListingId, datetime], None]] = {
+            EnrichPart.DETAILS: self._fetch_details,
+            EnrichPart.CALENDARS: self._fetch_calendar,
+            EnrichPart.REVIEWS: self._fetch_reviews,
+        }
         try:
-            details = self._details.get_details(listing_id)
+            fetchers[part](listing_id, now)
         except GatewayError as error:
-            logger.warning("Could not load details of %s: %s", listing_id, error)
+            logger.warning("Could not load %s of %s: %s", part.value, listing_id, error)
             return False
-        self._profiles.save_profile(
+        return True
+
+    def _fetch_details(self, listing_id: ListingId, now: datetime) -> None:
+        details = self._gateways.details.get_details(listing_id)
+        self._repos.profiles.save_profile(
             ListingProfile(
                 listing=details.listing,
                 captured_at=now,
@@ -128,24 +177,15 @@ class EnrichListingsUseCase:
                 is_superhost=details.is_superhost,
             )
         )
-        return True
 
-    def _fetch_calendar(self, listing_id: ListingId, now: datetime) -> bool:
-        try:
-            days = self._calendar.get_calendar(listing_id)
-        except GatewayError as error:
-            logger.warning("Could not load calendar of %s: %s", listing_id, error)
-            return False
-        self._calendars.save_calendar(CalendarSnapshot(listing_id, now, tuple(days)))
-        return True
+    def _fetch_calendar(self, listing_id: ListingId, now: datetime) -> None:
+        days = self._gateways.calendars.get_calendar(listing_id)
+        self._repos.calendars.save_calendar(CalendarSnapshot(listing_id, now, tuple(days)))
+
+    def _fetch_reviews(self, listing_id: ListingId, now: datetime) -> None:
+        reviews = self._gateways.reviews.get_reviews(listing_id)
+        self._repos.reviews.save_reviews(listing_id, now, reviews)
 
 
-@dataclass(frozen=True, slots=True)
-class _Task:
-    listing_id: ListingId
-    details: bool
-    calendar: bool
-
-
-def _is_stale(captured_at: datetime | None, now: datetime, refresh: timedelta) -> bool:
-    return captured_at is None or now - captured_at >= refresh
+def _is_stale(fetched_at: datetime | None, now: datetime, refresh: timedelta) -> bool:
+    return fetched_at is None or now - fetched_at >= refresh

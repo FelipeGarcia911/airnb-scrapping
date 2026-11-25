@@ -1,8 +1,10 @@
-"""Dataset exporters (Strategy): the same three tables as CSV or JSON files.
+"""Dataset exporters (Strategy): the same tables as CSV or JSON files.
 
 listings.<ext>            one row per listing (yours included, ``is_mine``)
 pricing_snapshots.<ext>   one row per listing x search (full history)
 calendar_snapshots.<ext>  one row per listing x observed day (full history)
+reviews.<ext>             one row per review: date, rating, language (no personal data)
+search_runs.<ext>         one row per search: parameters and coverage
 """
 
 from __future__ import annotations
@@ -10,12 +12,13 @@ from __future__ import annotations
 import csv
 import json
 from collections.abc import Iterator, Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from airbnb_tracker.application.dto import Dataset, ListingRecord
+from airbnb_tracker.application.dto import Dataset, ListingRecord, SearchRun
 from airbnb_tracker.domain.entities import Snapshot
-from airbnb_tracker.domain.profile import CalendarSnapshot
+from airbnb_tracker.domain.profile import CalendarSnapshot, Review
 from airbnb_tracker.domain.value_objects import Money
 
 LIST_SEPARATOR = " | "
@@ -46,7 +49,9 @@ def listing_rows(records: Sequence[ListingRecord]) -> Iterator[dict[str, Any]]:
             "is_guest_favorite": listing.is_guest_favorite,
             "amenities": sorted(a.name for a in profile.amenities) if profile else None,
             "photos": list(listing.photos),
-            "details_collected_at": profile.captured_at.isoformat() if profile else None,
+            "last_review_at": _iso(record.last_review_at),
+            "reviews_last_90_days": record.reviews_last_90_days,
+            "details_collected_at": _iso(profile.captured_at if profile else None),
         }
 
 
@@ -86,11 +91,54 @@ def calendar_rows(calendars: Sequence[CalendarSnapshot]) -> Iterator[dict[str, A
             }
 
 
+def review_rows(reviews: Sequence[Review]) -> Iterator[dict[str, Any]]:
+    for review in reviews:
+        yield {
+            "listing_id": str(review.listing_id),
+            "review_id": review.review_id,
+            "created_at": review.created_at.isoformat(),
+            "rating": review.rating,
+            "language": review.language,
+        }
+
+
+def search_run_rows(runs: Sequence[SearchRun]) -> Iterator[dict[str, Any]]:
+    for run in runs:
+        filters = run.filters
+        yield {
+            "run_id": run.run_id,
+            "started_at": run.started_at.isoformat(),
+            "duration_seconds": round((run.finished_at - run.started_at).total_seconds(), 1),
+            "check_in": run.stay.check_in.isoformat(),
+            "check_out": run.stay.check_out.isoformat(),
+            "nights": run.stay.nights,
+            "guests": run.guests,
+            "currency": run.currency,
+            "room_type": filters.room_type.value if filters.room_type else None,
+            "min_bedrooms": filters.min_bedrooms,
+            "min_bathrooms": filters.min_bathrooms,
+            "min_beds": filters.min_beds,
+            "price_min": filters.price_min,
+            "price_max": filters.price_max,
+            "latitude": run.center.latitude if run.center else None,
+            "longitude": run.center.longitude if run.center else None,
+            "radius_km": run.radius_km,
+            "url": run.url,
+            "complete_coverage": run.complete_coverage,
+            "results_found": run.results_found,
+            "results_kept": run.results_kept,
+            "truncated": run.truncated,
+            "error": run.error,
+        }
+
+
 def _tables(dataset: Dataset) -> Mapping[str, Iterator[dict[str, Any]]]:
     return {
         "listings": listing_rows(dataset.listings),
         "pricing_snapshots": pricing_rows(dataset.snapshots),
         "calendar_snapshots": calendar_rows(dataset.calendars),
+        "reviews": review_rows(dataset.reviews),
+        "search_runs": search_run_rows(dataset.search_runs),
     }
 
 
@@ -123,6 +171,10 @@ class JsonDatasetExporter:
             path = self._output_dir / f"{name}.json"
             path.write_text(json.dumps(list(rows), ensure_ascii=False, indent=1), "utf-8")
         return str(self._output_dir)
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
 
 
 def _flatten(value: Any) -> Any:

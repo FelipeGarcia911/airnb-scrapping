@@ -23,6 +23,7 @@ from airbnb_tracker.application.exceptions import ApplicationError
 from airbnb_tracker.application.use_cases import (
     BuildReportQuery,
     EnrichCommand,
+    EnrichPart,
     ExportQuery,
     ScanMarketCommand,
 )
@@ -57,28 +58,43 @@ class TrackerCli:
                 center=search.center,
                 radius_km=search.radius_km,
                 template_url=search.url,
+                complete_coverage=search.complete_coverage,
+                max_listings=search.max_listings,
                 competitor_filter=self._c.competitor_filter(),
             )
         )
         for s in summaries:
             detail = f"ERROR: {s.error}" if s.error else f"{s.kept} listings (of {s.found})"
-            self._print(f"  {s.stay}: {detail}")
+            warning = "  [truncated by Airbnb: results may be incomplete]" if s.truncated else ""
+            self._print(f"  {s.stay}: {detail}{warning}")
 
-    def enrich(self, _args: argparse.Namespace) -> None:
+    def enrich(self, args: argparse.Namespace) -> None:
         settings = self._c.settings
         my_id = settings.my_listing.listing_id
+        parts = frozenset(EnrichPart(p) for p in args.only) if args.only else frozenset(EnrichPart)
+        max_listings = args.max if args.max is not None else settings.enrich.max_listings_per_run
+        top = args.top if args.top is not None else settings.enrich.competitors
+        scope = f"{top} nearest competitors" if top is not None else "all competitors"
+        self._print(
+            f"Enriching {scope}, up to {max_listings} this run ({', '.join(sorted(parts))})…"
+        )
         summary = self._c.enrich_listings.execute(
             EnrichCommand(
                 stays=self._stays,
                 priority_ids=[my_id] if my_id else [],
-                max_listings=settings.enrich.max_listings_per_run,
+                center=settings.search.center,
+                parts=parts,
+                competitors=top,
+                max_listings=max_listings,
                 details_refresh=settings.enrich.details_refresh,
                 calendar_refresh=settings.enrich.calendar_refresh,
+                reviews_refresh=settings.enrich.reviews_refresh,
             )
         )
+        fetched = " · ".join(f"{part.value}: {n}" for part, n in summary.fetched.items())
         self._print(
-            f"Listing pages: {summary.details_fetched} · calendars: {summary.calendars_fetched} · "
-            f"up to date: {summary.up_to_date} · pending for next run: {summary.pending}"
+            f"Fetched {fetched} · up to date: {summary.up_to_date} · "
+            f"pending for next run: {summary.pending}"
         )
         if summary.failed:
             self._print(f"  Failed: {', '.join(map(str, summary.failed))}")
@@ -100,6 +116,7 @@ class TrackerCli:
         settings = self._c.settings
         destination = self._c.export_dataset.execute(
             ExportQuery(
+                as_of=self._c.clock.now(),
                 my_listing_id=settings.my_listing.listing_id,
                 my_location=settings.search.center,
                 min_nights_window_days=settings.enrich.availability_window_days,
@@ -133,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("scan", help="Search listings and store their prices")
-    commands.add_parser("enrich", help="Fetch listing pages and calendars")
+    enrich = commands.add_parser("enrich", help="Fetch listing pages, calendars and reviews")
     report = commands.add_parser("report", help="Print the market analysis")
     export = commands.add_parser("export", help="Export listings, pricing and calendar snapshots")
     run = commands.add_parser("run", help="scan + enrich + report + export")
@@ -141,6 +158,17 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--my-price", type=Decimal, help="Your nightly price (overrides config)")
     for sub in (export, run):
         sub.add_argument("-f", "--format", choices=EXPORT_FORMATS, default="csv")
+    for sub in (enrich, run):
+        sub.add_argument(
+            "--only",
+            action="append",
+            choices=[part.value for part in EnrichPart],
+            help="Fetch only this kind of data (repeatable). Default: all",
+        )
+        sub.add_argument(
+            "--top", type=int, help="Only the N nearest competitors (overrides config)"
+        )
+        sub.add_argument("--max", type=int, help="Listings to visit in this run (overrides config)")
     return parser
 
 

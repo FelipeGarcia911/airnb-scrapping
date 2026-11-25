@@ -15,6 +15,7 @@ search:
   # The URL dates are replaced for every `stays` combination.
   url: null
   complete_coverage: true   # Airbnb caps result pages; splitting the area finds ~15% more
+  max_listings: null        # keep only the N nearest listings per search (null = all)
 
   guests: 2
   room_type: entire_place   # entire_place | private_room | null (any)
@@ -36,9 +37,11 @@ stays:
 
 # Listing pages (amenities, description, capacity) and calendars (availability, minimum stay).
 enrich:
+  competitors: 50           # only the 50 nearest competitors (null = all found)
   max_listings_per_run: 50  # the rest is picked up by the next run
   details_refresh_days: 7
   calendar_refresh_days: 2
+  reviews_refresh_days: 7
   availability_window_days: 60
 
 scraping:

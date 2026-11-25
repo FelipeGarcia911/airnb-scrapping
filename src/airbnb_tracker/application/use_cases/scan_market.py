@@ -1,14 +1,25 @@
-"""Use case: search the listings that match your filters and store what they charge."""
+"""Use case: search the listings that match your filters and store what they charge.
+
+Every search, successful or not, is also recorded as a ``SearchRun`` so the coverage
+of each query (results found, kept, truncated by Airbnb) can be audited later.
+"""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
+from uuid import uuid4
 
-from airbnb_tracker.application.dto import SearchCriteria, SearchFilters
+from airbnb_tracker.application.dto import SearchCriteria, SearchFilters, SearchResult, SearchRun
 from airbnb_tracker.application.exceptions import GatewayError
-from airbnb_tracker.application.ports import Clock, ListingSearchGateway, SnapshotRepository
+from airbnb_tracker.application.ports import (
+    Clock,
+    ListingSearchGateway,
+    SearchRunRepository,
+    SnapshotRepository,
+)
 from airbnb_tracker.domain.entities import ListingOffer, Snapshot
 from airbnb_tracker.domain.specifications import AnyListing, ListingSpecification, WithinRadius
 from airbnb_tracker.domain.value_objects import BoundingBox, GeoPoint, ListingId, StayPeriod
@@ -26,6 +37,8 @@ class ScanMarketCommand:
     center: GeoPoint | None = None
     radius_km: float = 1.0
     template_url: str | None = None
+    complete_coverage: bool = True
+    max_listings: int | None = None  # keep only the N nearest (or top-ranked in URL mode)
     competitor_filter: ListingSpecification = field(default_factory=AnyListing)
 
     def __post_init__(self) -> None:
@@ -38,20 +51,29 @@ class ScanSummary:
     stay: StayPeriod
     found: int
     kept: int
+    truncated: bool = False
     error: str | None = None
 
 
 class ScanMarketUseCase:
     def __init__(
-        self, gateway: ListingSearchGateway, repository: SnapshotRepository, clock: Clock
+        self,
+        gateway: ListingSearchGateway,
+        snapshots: SnapshotRepository,
+        runs: SearchRunRepository,
+        clock: Clock,
+        id_factory: Callable[[], str] = lambda: uuid4().hex,
     ) -> None:
         self._gateway = gateway
-        self._repository = repository
+        self._snapshots = snapshots
+        self._runs = runs
         self._clock = clock
+        self._id_factory = id_factory
 
     def execute(self, command: ScanMarketCommand) -> list[ScanSummary]:
+        run_id = self._id_factory()
         area, is_competitor = self._area_and_rule(command)
-        return [self._scan(command, stay, area, is_competitor) for stay in command.stays]
+        return [self._scan(run_id, command, stay, area, is_competitor) for stay in command.stays]
 
     @staticmethod
     def _area_and_rule(
@@ -67,11 +89,13 @@ class ScanMarketUseCase:
 
     def _scan(
         self,
+        run_id: str,
         command: ScanMarketCommand,
         stay: StayPeriod,
         area: BoundingBox | None,
         is_competitor: ListingSpecification,
     ) -> ScanSummary:
+        started_at = self._clock.now()
         criteria = SearchCriteria(
             stay=stay,
             currency=command.currency,
@@ -80,22 +104,76 @@ class ScanMarketUseCase:
             template_url=command.template_url,
         )
         try:
-            offers = self._gateway.search(criteria)
+            result = self._gateway.search(criteria)
         except GatewayError as error:
             logger.warning("Market scan failed for %s: %s", stay, error)
-            return ScanSummary(stay, found=0, kept=0, error=str(error))
+            summary = ScanSummary(stay, found=0, kept=0, error=str(error))
+            self._record(run_id, command, started_at, summary)
+            return summary
 
-        competitors = _unique(o for o in offers if is_competitor.is_satisfied_by(o.listing))
-        self._repository.add(
+        competitors = _unique(o for o in result.offers if is_competitor.is_satisfied_by(o.listing))
+        competitors = _nearest(competitors, command.center, command.max_listings)
+        self._snapshots.add(
             Snapshot(
-                captured_at=self._clock.now(),
+                captured_at=started_at,
                 stay=stay,
                 currency=command.currency,
                 guests=command.filters.guests,
                 offers=tuple(competitors),
             )
         )
-        return ScanSummary(stay, found=len(offers), kept=len(competitors))
+        summary = _summary(stay, result, len(competitors))
+        self._record(run_id, command, started_at, summary)
+        return summary
+
+    def _record(
+        self,
+        run_id: str,
+        command: ScanMarketCommand,
+        started_at: datetime,
+        summary: ScanSummary,
+    ) -> None:
+        url_mode = command.template_url is not None
+        self._runs.add_run(
+            SearchRun(
+                run_id=run_id,
+                started_at=started_at,
+                finished_at=self._clock.now(),
+                stay=summary.stay,
+                guests=command.filters.guests,
+                currency=command.currency,
+                filters=command.filters,
+                center=None if url_mode else command.center,
+                radius_km=None if url_mode else command.radius_km,
+                url=command.template_url,
+                complete_coverage=command.complete_coverage and not url_mode,
+                results_found=summary.found,
+                results_kept=summary.kept,
+                truncated=summary.truncated,
+                error=summary.error,
+            )
+        )
+
+
+def _summary(stay: StayPeriod, result: SearchResult, kept: int) -> ScanSummary:
+    return ScanSummary(stay, found=len(result.offers), kept=kept, truncated=result.truncated)
+
+
+def _nearest(
+    offers: list[ListingOffer], center: GeoPoint | None, limit: int | None
+) -> list[ListingOffer]:
+    """Keep the ``limit`` nearest offers, preserving Airbnb's ranking order among them."""
+    if limit is None or len(offers) <= limit:
+        return offers
+    if center is None:
+        return offers[:limit]
+
+    def distance(offer: ListingOffer) -> float:
+        location = offer.listing.location
+        return center.distance_km_to(location) if location else float("inf")
+
+    kept = {id(o) for o in sorted(offers, key=distance)[:limit]}
+    return [o for o in offers if id(o) in kept]
 
 
 def _unique(offers: Iterable[ListingOffer]) -> list[ListingOffer]:

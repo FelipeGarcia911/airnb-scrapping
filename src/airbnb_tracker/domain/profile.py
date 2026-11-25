@@ -108,3 +108,22 @@ class AvailabilitySummary:
             median_unavailable_pct=round(statistics.median(rates), 1) if rates else None,
             median_min_nights=statistics.median(stays) if stays else None,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Review:
+    """A review reduced to what measures booking activity.
+
+    Reviewer names, photos and texts are deliberately not kept (personal data).
+    """
+
+    listing_id: ListingId
+    review_id: str
+    created_at: datetime
+    rating: int | None = None
+    language: str = ""
+
+
+def reviews_since(reviews: Sequence[Review], since: datetime) -> int:
+    """Reviews written after ``since``: a proxy for recent completed stays."""
+    return sum(1 for review in reviews if review.created_at >= since)
