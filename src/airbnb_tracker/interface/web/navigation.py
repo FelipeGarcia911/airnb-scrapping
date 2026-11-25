@@ -16,3 +16,19 @@ def link(name: str, label: str | None = None, icon: str | None = None) -> None:
     page = _PAGES.get(name)
     if page is not None:
         st.page_link(page, label=label or page.title, icon=icon)
+
+
+def go_to(name: str) -> None:
+    page = _PAGES.get(name)
+    if page is not None:
+        st.switch_page(page)
+
+
+def next_step(name: str, label: str) -> None:
+    """Prominent "continue" button at the end of a step."""
+    page = _PAGES.get(name)
+    if page is None:
+        return
+    st.divider()
+    if st.button(label, type="primary", icon=":material/arrow_forward:", key=f"next_{name}"):
+        st.switch_page(page)

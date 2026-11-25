@@ -33,6 +33,8 @@ STREAMLIT_OPTIONS: dict[str, str] = {
     "theme.baseRadius": "12px",
     "theme.buttonRadius": "8px",
     "theme.showWidgetBorder": "true",
+    "theme.metricValueFontSize": "1.5rem",  # default is too large for a row of 5 KPIs
+    "theme.metricValueFontWeight": "700",
     "theme.chartCategoricalColors": f'["{CORAL}","{INK}","#00A699","#FC642D","#767676"]',
     "client.toolbarMode": "minimal",
     "server.address": "localhost",  # local tool: never listen on the network

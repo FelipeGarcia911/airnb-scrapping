@@ -15,6 +15,7 @@ MONTHLY_NIGHTS = 20
 
 def render() -> None:
     st.title("Availability")
+    st.caption("Step 3 of 4 · Results")
     st.markdown(
         "From each competitor's calendar: how many upcoming nights cannot be booked and "
         "the minimum stay they require."

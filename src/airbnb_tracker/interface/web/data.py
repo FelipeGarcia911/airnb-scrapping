@@ -23,6 +23,7 @@ from airbnb_tracker.infrastructure.exporters.dataset import (
     search_run_rows,
 )
 from airbnb_tracker.interface.web.context import config_path
+from airbnb_tracker.interface.web.formatting import format_money, money_input
 
 _MY_PRICE = "_my_nightly_price"
 
@@ -103,24 +104,21 @@ def _load(config: str, db_version: float, my_price: float) -> MarketData:
     )
 
 
-def my_price_input(settings: AppSettings, key: str) -> float | None:
+def my_price_input(settings: AppSettings) -> int | None:
     """Your nightly price, shared by every page that shows a position."""
-    default = st.session_state.get(_MY_PRICE, float(settings.my_listing.nightly_price or 0))
-    value = st.number_input(
-        f"Your nightly price ({settings.scraping.currency})",
-        min_value=0.0,
-        value=default,
-        step=5000.0,
-        key=key,
+    configured = settings.my_listing.nightly_price
+    return money_input(
+        "Your nightly price",
+        key=_MY_PRICE,
+        currency=settings.scraping.currency,
+        default=round(configured) if configured else None,
         help="Type the price you charge (or plan to charge) per night to see where it "
-        "stands. It is not saved; set a default in Set up my market.",
+        "stands. It is not saved; set a default in step 1.",
     )
-    st.session_state[_MY_PRICE] = value
-    return value or None
 
 
 def money(amount: float | None, currency: str) -> str:
-    return "—" if amount is None else f"${amount:,.0f} {currency}"
+    return format_money(amount, currency)
 
 
 def ago(moment: datetime | None) -> str:

@@ -13,10 +13,9 @@ from typing import Any
 ROOM_TYPES = {"Entire place": "entire_place", "Private room": "private_room", "Any": None}
 DURATION_CHOICES = (7, 14, 20, 28, 30, 60, 90)
 # Optional numbers: the form shows 0 for "no limit", the config stores null.
-OPTIONAL_NUMBERS = (
-    "nightly_price", "min_bedrooms", "max_bedrooms", "min_bathrooms", "min_beds",
-    "price_min", "price_max",
-)  # fmt: skip
+OPTIONAL_NUMBERS = ("min_bedrooms", "max_bedrooms", "min_bathrooms", "min_beds")
+# Money amounts: whole numbers typed with thousands separators; empty = not set.
+MONEY_FIELDS = ("nightly_price", "price_min", "price_max")  # fmt: skip
 _LISTING_ID = re.compile(r"(?:/rooms/)?(\d{5,25})")
 
 
@@ -25,11 +24,11 @@ class FormValues:
     """Everything the setup form edits, with UI-friendly types."""
 
     listing_id: str = ""
-    nightly_price: float | None = None
+    nightly_price: int | None = None
     use_url: bool = False
     latitude: float = 4.8133
     longitude: float = -75.6961
-    radius_km: float = 6.0
+    radius_km: int = 6
     url: str = ""
     guests: int = 2
     room_type_label: str = "Entire place"
@@ -47,9 +46,9 @@ class FormValues:
     keep_all_in_search: bool = False
     complete_coverage: bool = True
     currency: str = "COP"
-    min_delay_seconds: float = 3.0
-    details_refresh_days: float = 7.0
-    calendar_refresh_days: float = 2.0
+    min_delay_seconds: int = 3
+    details_refresh_days: int = 7
+    calendar_refresh_days: int = 2
 
 
 def parse_listing_id(text: str) -> str | None:
@@ -68,11 +67,11 @@ def from_raw(raw: dict[str, Any]) -> FormValues:
     competitors = enrich.get("competitors") or search.get("max_listings") or defaults.competitors
     return FormValues(
         listing_id=str(mine.get("id") or ""),
-        nightly_price=_opt_float(mine.get("nightly_price")),
+        nightly_price=_opt_int(mine.get("nightly_price")),
         use_url=bool(search.get("url")),
         latitude=float(search.get("latitude", defaults.latitude)),
         longitude=float(search.get("longitude", defaults.longitude)),
-        radius_km=float(search.get("radius_km", defaults.radius_km)),
+        radius_km=max(1, round(float(search.get("radius_km", defaults.radius_km)))),
         url=str(search.get("url") or ""),
         guests=int(search.get("guests", defaults.guests)),
         room_type_label=label,
@@ -90,9 +89,9 @@ def from_raw(raw: dict[str, Any]) -> FormValues:
         keep_all_in_search=search.get("max_listings") is None and "max_listings" in search,
         complete_coverage=bool(search.get("complete_coverage", defaults.complete_coverage)),
         currency=str(scraping.get("currency", defaults.currency)),
-        min_delay_seconds=float(scraping.get("min_delay_seconds", defaults.min_delay_seconds)),
-        details_refresh_days=float(enrich.get("details_refresh_days", 7)),
-        calendar_refresh_days=float(enrich.get("calendar_refresh_days", 2)),
+        min_delay_seconds=round(float(scraping.get("min_delay_seconds", 3))),
+        details_refresh_days=round(float(enrich.get("details_refresh_days", 7))),
+        calendar_refresh_days=round(float(enrich.get("calendar_refresh_days", 2))),
     )
 
 
@@ -145,8 +144,4 @@ def to_raw(values: FormValues, base: dict[str, Any]) -> dict[str, Any]:
 
 
 def _opt_int(value: Any) -> int | None:
-    return None if value is None else int(value)
-
-
-def _opt_float(value: Any) -> float | None:
-    return None if value is None else float(value)
+    return None if value is None else round(float(value))

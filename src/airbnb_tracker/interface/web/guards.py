@@ -7,7 +7,7 @@ import streamlit as st
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import settings_or_none
 from airbnb_tracker.interface.web.data import MarketData, load_market
-from airbnb_tracker.interface.web.navigation import link
+from airbnb_tracker.interface.web.navigation import link, next_step
 
 
 def require_settings() -> AppSettings | None:
@@ -26,10 +26,10 @@ def require_data(settings: AppSettings, my_price: float | None = None) -> Market
     data = load_market(settings, my_price)
     if data is None or not data.has_prices:
         st.info(
-            "No market data for the current settings yet. Click **Update market data** in "
-            "the left panel: it searches prices, reads competitor details and keeps the "
-            "history. You can keep browsing while it runs.",
+            "No data for your current settings yet. Collect it in step 2: it searches "
+            "prices, reads competitor details and keeps the history.",
             icon=":material/sync:",
         )
+        next_step("collect", "Go to step 2: collect data")
         return None
     return data

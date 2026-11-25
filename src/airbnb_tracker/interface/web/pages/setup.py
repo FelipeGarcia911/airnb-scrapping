@@ -20,6 +20,7 @@ from airbnb_tracker.infrastructure.config import (
 )
 from airbnb_tracker.interface.web.config_form import (
     DURATION_CHOICES,
+    MONEY_FIELDS,
     OPTIONAL_NUMBERS,
     ROOM_TYPES,
     FormValues,
@@ -29,6 +30,8 @@ from airbnb_tracker.interface.web.config_form import (
 )
 from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.estimates import estimate
+from airbnb_tracker.interface.web.formatting import forget_money_input, money_input
+from airbnb_tracker.interface.web.navigation import go_to
 from airbnb_tracker.interface.web.theme import AREA_FILL
 
 _PREFIX = "form_"
@@ -41,10 +44,11 @@ def render() -> None:
     _init_state(base)
 
     st.title("Set up my market")
+    st.caption("Step 1 of 4 · then collect data, read the results and export them.")
     st.markdown(
         "Tell the tracker **which listing is yours** and **what counts as a competitor**. "
         "Like a *comp set* in market tools, only comparable stays near yours are analysed. "
-        "Changes take effect on the next **Update market data**."
+        "Changes take effect the next time you collect data (step 2)."
     )
     _step_property()
     _step_area()
@@ -70,14 +74,14 @@ def _step_property() -> None:
             help="Open your listing on airbnb.com and copy the address bar. The number after "
             "/rooms/ is enough.",
         )
-        right.number_input(
-            "Your nightly price",
-            key=_key("nightly_price"),
-            min_value=0.0,
-            step=5000.0,
-            help="What you charge (or plan to charge) per night. Used to show your position. "
-            "0 = not set.",
-        )
+        with right:
+            money_input(
+                "Your nightly price",
+                key=_key("nightly_price"),
+                currency=_currency(),
+                help="What you charge (or plan to charge) per night. Used to show your "
+                "position. Leave empty if not set.",
+            )
         st.button(
             "Centre the search on my listing",
             icon=":material/my_location:",
@@ -105,10 +109,11 @@ def _step_area() -> None:
         lon.number_input("Longitude", key=_key("longitude"), format="%.5f", step=0.001)
         radius.slider(
             "Radius (km)",
-            0.5,
-            15.0,
+            1,
+            15,
             key=_key("radius_km"),
-            step=0.5,
+            step=1,
+            format="%d km",
             help="A smaller radius is faster and keeps competitors truly comparable.",
         )
         st.map(
@@ -139,8 +144,12 @@ def _step_filters() -> None:
         )  # fmt: skip
         c1.number_input("Min bathrooms", key=_key("min_bathrooms"), min_value=0)
         c2.number_input("Min beds", key=_key("min_beds"), min_value=0)
-        c3.number_input("Min price / night", key=_key("price_min"), min_value=0, step=10000)
-        c4.number_input("Max price / night", key=_key("price_max"), min_value=0, step=10000)
+        with c3:
+            money_input("Min price / night", key=_key("price_min"), currency=_currency(),
+                        placeholder="No limit")  # fmt: skip
+        with c4:
+            money_input("Max price / night", key=_key("price_max"), currency=_currency(),
+                        placeholder="No limit")  # fmt: skip
 
 
 def _step_scenarios() -> None:
@@ -200,15 +209,15 @@ def _advanced() -> None:
         )  # fmt: skip
         c2.text_input("Currency", key=_key("currency"), max_chars=3)
         c3.number_input(
-            "Pause between requests (s)", key=_key("min_delay_seconds"), min_value=1.0,
-            step=0.5, help="Keeps usage moderate. Raise it if many requests fail.",
+            "Pause between requests (s)", key=_key("min_delay_seconds"), min_value=1,
+            step=1, help="Keeps usage moderate. Raise it if many requests fail.",
         )  # fmt: skip
         c1.number_input(
-            "Refresh listing pages every (days)", key=_key("details_refresh_days"),
+            "Refresh listing pages every (days)", key=_key("details_refresh_days"), min_value=1,
             help="Amenities and descriptions rarely change: weekly is enough.",
         )  # fmt: skip
         c2.number_input(
-            "Refresh calendars every (days)", key=_key("calendar_refresh_days"),
+            "Refresh calendars every (days)", key=_key("calendar_refresh_days"), min_value=1,
             help="Availability changes fast: every 2–3 days builds a useful history.",
         )  # fmt: skip
 
@@ -227,12 +236,18 @@ def _summary_and_save(raw: dict[str, Any], path: Path) -> None:
         c1.metric("Price searches", run.searches, help="Stay lengths × check-in dates")
         c2.metric("Listings read in detail", run.listings_to_enrich)
         c3.metric("Estimated time", f"≈ {run.total_minutes:.0f} min")
-        save, discard = st.columns([1, 5])
-        if save.button("Save settings", type="primary", icon=":material/save:"):
+        unsaved = raw != _load_base(path)
+        if unsaved:
+            st.caption(":orange[You have unsaved changes.]")
+        go, save, discard = st.columns([2, 1, 3])
+        if go.button("Save and continue", type="primary", icon=":material/arrow_forward:"):
             save_raw_config(raw, path)
-            st.toast("Settings saved. Run **Update market data** to apply them.",
-                     icon=":material/check_circle:")  # fmt: skip
-        if discard.button("Discard changes", type="tertiary"):
+            go_to("collect")
+        if save.button("Save", icon=":material/save:", disabled=not unsaved):
+            save_raw_config(raw, path)
+            st.toast("Settings saved.", icon=":material/check_circle:")
+            st.rerun()
+        if discard.button("Discard changes", type="tertiary", disabled=not unsaved):
             _reset_state()
             st.rerun()
 
@@ -296,13 +311,21 @@ def _init_state(base: dict[str, Any]) -> None:
     for field in fields(FormValues):
         value = getattr(values, field.name)
         if field.name in OPTIONAL_NUMBERS and value is None:
-            value = 0.0 if field.name == "nightly_price" else 0  # widgets show 0 = no limit
+            value = 0  # number widgets show 0 = no limit
         st.session_state[_key(field.name)] = list(value) if field.name == "durations" else value
+    for name in MONEY_FIELDS:
+        forget_money_input(_key(name))  # rebuild the formatted text from the loaded value
 
 
 def _reset_state() -> None:
     for field in fields(FormValues):
         st.session_state.pop(_key(field.name), None)
+    for name in MONEY_FIELDS:
+        forget_money_input(_key(name))
+
+
+def _currency() -> str:
+    return str(st.session_state.get(_key("currency")) or "COP")
 
 
 def _current_values() -> FormValues:

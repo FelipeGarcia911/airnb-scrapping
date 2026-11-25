@@ -13,6 +13,7 @@ _TOP_AMENITIES = 25
 
 def render() -> None:
     st.title("Comp set")
+    st.caption("Step 3 of 4 · Results")
     st.markdown(
         "The listings you compete with: the nearest stays matching your filters. "
         "Your listing is shown in coral."
@@ -90,7 +91,13 @@ def _amenities(analysed: pd.DataFrame) -> None:
 def _with_median_prices(listings: pd.DataFrame, pricing: pd.DataFrame) -> pd.DataFrame:
     if listings.empty or pricing.empty:
         return listings
-    medians = pricing.groupby(["listing_id", "nights"])["nightly_price"].median().unstack("nights")
+    medians = (
+        pricing.groupby(["listing_id", "nights"])["nightly_price"]
+        .median()
+        .round(0)
+        .astype("Int64")
+        .unstack("nights")
+    )
     medians.columns = [f"Nightly · {n}n" for n in medians.columns]
     return listings.merge(medians, left_on="listing_id", right_index=True, how="left")
 
@@ -122,6 +129,6 @@ def _table(listings: pd.DataFrame) -> None:
         column_config={
             "Airbnb": st.column_config.LinkColumn(display_text="Open"),
             "Km": st.column_config.NumberColumn(format="%.1f"),
-            **{c: st.column_config.NumberColumn(format="dollar") for c in price_columns},
+            **dict.fromkeys(price_columns, st.column_config.NumberColumn(format="localized")),
         },
     )

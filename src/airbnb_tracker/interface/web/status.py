@@ -1,10 +1,12 @@
-"""Sidebar "Market data" card: update button, live progress and time left.
+"""Data updates: starting them, following their progress and the sidebar status badge.
 
-Always visible, like the sync status of a dashboard: you can keep browsing while it runs.
+The full controls live in step 2 (Collect data); the sidebar only shows status, so the
+progress stays visible while you browse other steps.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -16,16 +18,18 @@ from airbnb_tracker.interface.web.context import config_path, settings_or_none
 from airbnb_tracker.interface.web.data import ago, last_update
 from airbnb_tracker.interface.web.estimates import RunEstimate, estimate
 from airbnb_tracker.interface.web.jobs import PHASE_LABELS, Job, JobRunner
+from airbnb_tracker.interface.web.navigation import link
 
-_POLL_SECONDS = 2
+POLL_SECONDS = 2
 _FILES_SECONDS = 10.0
+_FINISHED_KEY = "_finished_job"
 
 UPDATES = {
     "everything": ("Updating market data", ["run", "-f", "csv"],
                    (Phase.PRICES, Phase.DETAILS, Phase.FILES)),
     "prices": ("Updating prices", ["scan"], (Phase.PRICES,)),
     "details": ("Updating listing details", ["enrich"], (Phase.DETAILS,)),
-    "files": ("Exporting files", ["export", "-f", "csv"], (Phase.FILES,)),
+    "files": ("Writing export files", ["export", "-f", "csv"], (Phase.FILES,)),
 }  # fmt: skip
 
 
@@ -54,50 +58,23 @@ def start_update(settings: AppSettings, kind: str) -> None:
     runner_for(settings).start(label, config_path(), args, phases, estimated)
 
 
-def sidebar_card() -> None:
-    settings = settings_or_none()
-    with st.sidebar.container(border=True):
-        st.markdown("**Market data**")
-        if settings is None:
-            st.caption("Set up your market first, then come back here to collect data.")
-            return
-        runner = runner_for(settings)
+def live_job(runner: JobRunner, render: Callable[[Job | None], None]) -> None:
+    """Re-render ``render`` every few seconds while a job runs; refresh data when it ends."""
 
-        @st.fragment(run_every=_POLL_SECONDS if runner.busy else None)
-        def live() -> None:
-            job = runner.current
-            if job and job.running:
-                _running(job, runner)
-                return
-            if job and st.session_state.get("_finished_job") != job.log_path.name:
-                st.session_state["_finished_job"] = job.log_path.name
-                st.cache_data.clear()
-                st.rerun()  # refresh every page with the new data
-            _idle(settings, job)
+    @st.fragment(run_every=POLL_SECONDS if runner.busy else None)
+    def fragment() -> None:
+        job = runner.current
+        if job and not job.running and st.session_state.get(_FINISHED_KEY) != job.log_path.name:
+            st.session_state[_FINISHED_KEY] = job.log_path.name
+            st.cache_data.clear()
+            st.rerun()  # every page picks up the new data and the buttons re-enable
+        render(job)
 
-        live()
+    fragment()
 
 
-def _idle(settings: AppSettings, job: Job | None) -> None:
-    if job is not None:
-        if job.succeeded:
-            st.success(f"{job.label}: done.", icon=":material/check_circle:")
-        else:
-            st.error(
-                f"{job.label}: stopped or failed. See Data & exports.", icon=":material/error:"
-            )
-    st.caption(f"Last update: {ago(last_update(settings))}")
-    run = run_estimate(settings)
-    if st.button("Update market data", type="primary", icon=":material/sync:", width="stretch"):
-        start_update(settings, "everything")
-        st.rerun()
-    st.caption(
-        f"≈ {run.total_minutes:.0f} min · {run.searches} price searches and the details of "
-        f"{run.listings_to_enrich} listings. You can keep browsing meanwhile."
-    )
-
-
-def _running(job: Job, runner: JobRunner) -> None:
+def progress_panel(job: Job, runner: JobRunner, *, key: str, compact: bool = False) -> None:
+    """Steps, current item, counts, elapsed time and time left of a running job."""
     progress = job.progress()
     current = job.current_phase()
     steps = []
@@ -109,8 +86,8 @@ def _running(job: Job, runner: JobRunner) -> None:
             steps.append(f"**● {PHASE_LABELS[phase]}**")
         else:
             steps.append(f":gray[○ {PHASE_LABELS[phase]}]")
-    st.markdown(job.label)
-    st.markdown("  \n".join(steps))
+    st.markdown(f"**{job.label}**" if not compact else job.label)
+    st.markdown(("  \n" if compact else "  →  ").join(steps))
 
     state = progress.get(current)
     if state and state.total:
@@ -120,13 +97,33 @@ def _running(job: Job, runner: JobRunner) -> None:
         st.progress(0.0, text="Starting…")
         st.caption("Connecting to Airbnb. The first result can take ~20 seconds.")
 
-    elapsed = _clock(job.elapsed_seconds())
     left = job.seconds_left()
-    st.caption(f"Elapsed {elapsed}" + (f" · about {_clock(left)} left" if left else ""))
-    if st.button("Stop", icon=":material/stop_circle:", width="stretch"):
+    st.caption(
+        f"Elapsed {clock(job.elapsed_seconds())}" + (f" · about {clock(left)} left" if left else "")
+    )
+    if st.button("Stop", icon=":material/stop_circle:", key=f"stop_{key}", width="stretch"):
         runner.stop()
 
 
-def _clock(seconds: float) -> str:
+def sidebar_status() -> None:
+    settings = settings_or_none()
+    with st.sidebar.container(border=True):
+        st.markdown("**Market data**")
+        if settings is None:
+            st.caption("Not set up yet. Start with step 1.")
+            return
+        runner = runner_for(settings)
+
+        def render(job: Job | None) -> None:
+            if job and job.running:
+                progress_panel(job, runner, key="sidebar", compact=True)
+                return
+            st.caption(f"Last update: {ago(last_update(settings))}")
+            link("collect", "Update data", ":material/sync:")
+
+        live_job(runner, render)
+
+
+def clock(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
     return f"{minutes}:{secs:02d}" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min"

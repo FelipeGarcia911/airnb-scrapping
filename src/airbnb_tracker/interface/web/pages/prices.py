@@ -9,11 +9,14 @@ from airbnb_tracker.application.dto import DurationReport
 from airbnb_tracker.interface.web.data import my_price_input
 from airbnb_tracker.interface.web.guards import require_data, require_settings
 
+# Whole amounts with thousands separators (the browser's locale decides the separator).
+_AMOUNT = st.column_config.NumberColumn(format="localized")
 _POSITION = {"below_market": "Below market", "competitive": "Competitive", "premium": "Premium"}
 
 
 def render() -> None:
     st.title("Prices")
+    st.caption("Step 3 of 4 · Results")
     st.markdown(
         "What comparable stays charge **per night**, for each stay length you track. "
         "Prices are after Airbnb's discounts and before cleaning fee and taxes."
@@ -21,7 +24,7 @@ def render() -> None:
     settings = require_settings()
     if settings is None:
         return
-    price = my_price_input(settings, key="prices_price")
+    price = my_price_input(settings)
     data = require_data(settings, price)
     if data is None:
         return
@@ -44,10 +47,10 @@ def render() -> None:
         hide_index=True,
         width="stretch",
         column_config={
-            "P25": st.column_config.NumberColumn(format="dollar"),
-            "Median": st.column_config.NumberColumn(format="dollar"),
-            "P75": st.column_config.NumberColumn(format="dollar"),
-            "Monthly": st.column_config.NumberColumn(format="dollar"),
+            "P25": _AMOUNT,
+            "Median": _AMOUNT,
+            "P75": _AMOUNT,
+            "Monthly": _AMOUNT,
             "Discount": st.column_config.NumberColumn(format="%.0f%%"),
             "With discount": st.column_config.ProgressColumn(
                 format="%.0f%%", min_value=0, max_value=100
@@ -63,13 +66,13 @@ def render() -> None:
 
 def _row(report: DurationReport) -> dict[str, object]:
     dist = report.distribution
-    median = float(dist.median.amount) if dist else None
+    median = round(dist.median.amount) if dist else None
     return {
         "Nights": report.nights,
         "Listings": report.listings,
-        "P25": float(dist.p25.amount) if dist else None,
+        "P25": round(dist.p25.amount) if dist else None,
         "Median": median,
-        "P75": float(dist.p75.amount) if dist else None,
+        "P75": round(dist.p75.amount) if dist else None,
         "Monthly": median * 30 if median else None,
         "Discount": float(report.median_discount_pct) if report.median_discount_pct else None,
         "With discount": report.discounted_share_pct,
@@ -97,11 +100,13 @@ def _seasonality(pricing: pd.DataFrame) -> None:
         latest.groupby(["check_in", "nights"])["nightly_price"]
         .median()
         .unstack("nights")
+        .round(0)
+        .astype("Int64")
         .rename(columns=lambda nights: f"{nights} nights")
     )
     st.dataframe(
         table,
         width="stretch",
-        column_config={c: st.column_config.NumberColumn(format="dollar") for c in table.columns},
+        column_config=dict.fromkeys(table.columns, _AMOUNT),
     )
     st.line_chart(table, height=260)

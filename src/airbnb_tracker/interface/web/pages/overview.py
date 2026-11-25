@@ -9,7 +9,7 @@ from airbnb_tracker.application.dto import DurationReport
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import settings_or_none
 from airbnb_tracker.interface.web.data import MarketData, load_market, money, my_price_input
-from airbnb_tracker.interface.web.navigation import link
+from airbnb_tracker.interface.web.navigation import link, next_step
 from airbnb_tracker.interface.web.status import run_estimate
 
 POSITION_LABELS = {
@@ -22,13 +22,14 @@ MONTHLY_SPECIALIST_NIGHTS = 20
 
 def render() -> None:
     st.title("Overview")
+    st.caption("Step 3 of 4 · Results")
     settings = settings_or_none()
     if settings is None:
         _welcome()
         return
     st.caption(_comp_set_description(settings))
 
-    price = my_price_input(settings, key="overview_price")
+    price = my_price_input(settings)
     data = load_market(settings, price)
     if data is None or not data.has_prices:
         _waiting_for_data(settings)
@@ -38,6 +39,7 @@ def render() -> None:
     _kpis(settings, data, focus)
     _takeaways(settings, data, focus, price)
     _explore()
+    next_step("export", "Next: export the data")
 
 
 def _welcome() -> None:
@@ -49,7 +51,7 @@ def _welcome() -> None:
     cards = [
         ("1 · Set up your market", "Paste your listing and choose what counts as a "
          "competitor: area, bedrooms, guests, stay lengths."),
-        ("2 · Update market data", "One click collects prices for every stay length and "
+        ("2 · Collect data", "One click collects prices for every stay length and "
          "date, plus competitors' availability, minimum stays and amenities."),
         ("3 · Read the insights", "See price ranges, discounts, occupancy and where your "
          "price stands, then download everything for deeper analysis."),
@@ -64,11 +66,11 @@ def _welcome() -> None:
 def _waiting_for_data(settings: AppSettings) -> None:
     run = run_estimate(settings)
     st.info(
-        f"Your market is set up. Click **Update market data** in the left panel to collect "
-        f"the first data (≈ {run.total_minutes:.0f} min). You can keep browsing meanwhile; "
-        "this page fills in when it finishes.",
+        f"Your market is set up but there is no data for it yet. Collect it in step 2 "
+        f"(≈ {run.total_minutes:.0f} min); this page fills in when it finishes.",
         icon=":material/sync:",
     )
+    next_step("collect", "Go to step 2: collect data")
 
 
 def _comp_set_description(settings: AppSettings) -> str:

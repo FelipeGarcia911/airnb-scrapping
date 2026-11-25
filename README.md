@@ -144,22 +144,22 @@ Useful options:
 uv run airbnb-tracker ui        # opens http://localhost:8501
 ```
 
-A local web app (Streamlit), organised like market-intelligence dashboards
-(comp set + dashboard):
+A local web app (Streamlit) organised as four steps, like the comp-set dashboards of
+market tools: define your comp set, collect, analyse, export.
 
-| Page | What it is for |
-|---|---|
-| **Overview** | Key numbers of your comp set (typical price, your position, nights not bookable, minimum stay) and plain-language takeaways. |
-| **Prices** | Price ranges per stay length (P25 / median / P75), monthly equivalent, discounts, your position and prices by check-in date (seasonality). |
-| **Comp set** | Map and list of competitors with links to Airbnb, and which amenities they offer versus yours. |
-| **Availability** | Nights not bookable in the next 30/60/90 days, minimum stays, monthly specialists and recent reviews. |
-| **Set up my market** | Guided steps: your listing (centre the search on it from its link), area, comparable filters, stay lengths and comp set size, with the resulting number of searches and run time. |
-| **Data & exports** | Download every table as CSV, run partial updates (prices only, details only, files) and read update logs. |
+| Step | Page | What it is for |
+|---|---|---|
+| **1 · Set up** | Set up my market | Your listing (centre the search on it from its link), area, comparable filters, stay lengths and comp set size, with the resulting searches and run time. *Save and continue* takes you to step 2. |
+| **2 · Collect** | Collect data | Starts the update (prices → listing details → export files) and follows it live: current step, what is being read, items done, elapsed time and time left. Partial updates and the log are here too. |
+| **3 · Results** | Overview | Key numbers of your comp set and plain-language takeaways. |
+| | Prices | Price ranges per stay length (P25 / median / P75), monthly equivalent, discounts, your position and seasonality by check-in date. |
+| | Comp set | Map and list of competitors with links to Airbnb, and which amenities they offer versus yours. |
+| | Availability | Nights not bookable in the next 30/60/90 days, minimum stays, monthly specialists and recent reviews. |
+| **4 · Export** | Export | Download every table as CSV or write them all to the exports folder. |
 
-**Update market data** lives in the sidebar on every page. While it runs you can keep
-browsing; the sidebar shows the current step (Prices → Listing details → Export files), what
-is being read right now, items done and an estimate of the time left. The CLI prints the same
-progress, so a terminal run is never silent either.
+The app opens on step 1 until there is data, and on the results afterwards. While an update
+runs you can move between steps: the sidebar keeps showing its progress. The CLI prints the
+same progress, so a terminal run is never silent either.
 
 The app only listens on `localhost`. Saving from the UI rewrites `config.yaml` without
 comments; `config.example.yaml` keeps the documented version.
