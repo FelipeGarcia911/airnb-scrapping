@@ -24,7 +24,7 @@ _TABLES = {
 
 def render() -> None:
     st.title("Export")
-    st.caption("Step 4 of 4")
+    st.caption("Step 5 of 5")
     st.markdown(
         "Everything collected so far, ready for Excel, Google Sheets or pandas. "
         "Data is never overwritten: each update adds to the history."

@@ -28,7 +28,7 @@ _QUADRANT_COLORS = {
 
 def render() -> None:
     st.title("Positioning")
-    st.caption("Step 3 of 4 · Results")
+    st.caption("Step 3 of 5 · Market analytics")
     st.markdown(
         "Where each competitor sits on **price versus quality**, to spot who is overpriced, "
         "who offers the best value and where your listing fits."

@@ -18,7 +18,7 @@ DEEP_DISCOUNT_PCT = 40
 
 def render() -> None:
     st.title("Data quality")
-    st.caption("Step 3 of 4 · Results")
+    st.caption("Step 3 of 5 · Market analytics")
     st.markdown(
         "Some listings show prices nobody would pay (a host blocking dates with a huge "
         "price, a long-term rental) and a few sit far outside their segment. They are "
@@ -31,13 +31,14 @@ def render() -> None:
     if data is None:
         return
     currency = settings.scraping.currency
-    raw_pricing, listings = data.raw_tables["pricing_snapshots"], data.listings
+    raw_pricing, listings = data.comp_set_tables["pricing_snapshots"], data.listings
     flags = data.bundle.outliers
 
     deep = analytics.deep_discounts(raw_pricing, listings, DEEP_DISCOUNT_PCT)
     priced = analytics.latest_pricing(raw_pricing)["listing_id"].nunique()
     c1, c2, c3 = st.columns(3)
-    c1.metric("Listings priced", priced)
+    c1.metric("Comp set listings priced", priced,
+              help="Comparable property kinds only (see step 1), outliers included.")  # fmt: skip
     c2.metric("Price outliers", len(flags),
               help="Left out of the statistics while the sidebar switch is on.")  # fmt: skip
     c3.metric(f"Deep discounts (≥{DEEP_DISCOUNT_PCT}%)", deep["listing_id"].nunique(),

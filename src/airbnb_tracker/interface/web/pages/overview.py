@@ -22,8 +22,8 @@ MONTHLY_SPECIALIST_NIGHTS = 20
 
 
 def render() -> None:
-    st.title("Overview")
-    st.caption("Step 3 of 4 · Results")
+    st.title("Market overview")
+    st.caption("Step 3 of 5 · Market analytics")
     settings = settings_or_none()
     if settings is None:
         _welcome()
@@ -41,7 +41,7 @@ def render() -> None:
     _kpis(settings, data, focus)
     _takeaways(settings, data, focus, price)
     _explore()
-    next_step("export", "Next: export the data")
+    next_step("advisor", "Next: price your listing")
 
 
 def _welcome() -> None:
@@ -193,23 +193,33 @@ def _monthly_specialists(analysed: pd.DataFrame) -> int:
 
 
 def _explore() -> None:
-    st.subheader("Explore")
-    cards = [
-        ("advisor", "Pricing advisor", ":material/price_check:",
-         "What should I charge? A suggested rate from your closest comparables."),
-        ("prices", "Prices", ":material/payments:",
-         "Price ranges per stay length, long-stay discounts and seasonality."),
-        ("demand", "Demand", ":material/trending_up:",
-         "Which dates are filling up and which months are busy historically."),
-        ("comp_set", "Comp set", ":material/holiday_village:",
-         "Who the competitors are, and which amenities are worth more."),
-        ("positioning", "Positioning", ":material/scatter_plot:",
-         "Price versus quality: who is overpriced and who is good value."),
-        ("availability", "Availability", ":material/calendar_month:",
-         "How booked they are, minimum stays and monthly specialists."),
+    groups = [
+        ("Market analytics", [
+            ("comp_set", "Comp set", ":material/holiday_village:",
+             "Who your competitors are and which amenities are worth more."),
+            ("prices", "Prices", ":material/payments:",
+             "What they charge per stay length, long-stay discounts and seasonality."),
+            ("demand", "Demand", ":material/trending_up:",
+             "Which dates are filling up and which months are busy historically."),
+            ("availability", "Availability", ":material/calendar_month:",
+             "How booked they are, minimum stays and monthly specialists."),
+            ("positioning", "Positioning", ":material/scatter_plot:",
+             "Price versus quality: who is overpriced and who is good value."),
+            ("quality", "Data quality", ":material/rule:",
+             "Which prices were left out as outliers, and why."),
+        ]),
+        ("Pricing & finances", [
+            ("advisor", "Pricing advisor", ":material/price_check:",
+             "What to charge: a suggested rate and any percentile you choose."),
+            ("earnings", "Earnings calculator", ":material/calculate:",
+             "What a price really earns after Airbnb's fees, taxes and your costs."),
+        ]),
     ]  # fmt: skip
-    for row in (cards[:3], cards[3:]):
-        for column, (name, label, icon, text) in zip(st.columns(3), row, strict=True):
-            with column.container(border=True, height="stretch"):
-                link(name, label, icon)
-                st.caption(text)
+    for title, cards in groups:
+        st.subheader(title)
+        for start in range(0, len(cards), 3):
+            row = cards[start : start + 3]
+            for column, (name, label, icon, text) in zip(st.columns(3), row, strict=False):
+                with column.container(border=True, height="stretch"):
+                    link(name, label, icon)
+                    st.caption(text)

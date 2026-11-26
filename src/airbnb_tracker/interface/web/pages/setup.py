@@ -10,6 +10,7 @@ from typing import Any
 import streamlit as st
 
 from airbnb_tracker.application.exceptions import GatewayError
+from airbnb_tracker.domain.property_types import PropertyGroup, property_group
 from airbnb_tracker.domain.value_objects import ListingId
 from airbnb_tracker.infrastructure.airbnb import PyAirbnbDetailsGateway
 from airbnb_tracker.infrastructure.config import (
@@ -44,7 +45,9 @@ def render() -> None:
     _init_state(base)
 
     st.title("Set up my market")
-    st.caption("Step 1 of 4 · then collect data, read the results and export them.")
+    st.caption(
+        "Step 1 of 5 · then collect data, analyse the market, price your listing and export."
+    )
     st.markdown(
         "Tell the tracker **which listing is yours** and **what counts as a competitor**. "
         "Like a *comp set* in market tools, only comparable stays near yours are analysed. "
@@ -137,6 +140,15 @@ def _step_filters() -> None:
             help="Search for stays that fit this many guests.",
         )  # fmt: skip
         c2.selectbox("Type of place", list(ROOM_TYPES), key=_key("room_type_label"))
+        st.multiselect(
+            "Kinds of property to compare",
+            [g.value for g in PropertyGroup],
+            key=_key("property_groups"),
+            format_func=lambda value: PropertyGroup(value).label,
+            placeholder="Every kind of property",
+            help="A city apartment does not compete with a country estate. Pick the kind of "
+            "your listing; leave empty to compare with everything.",
+        )
         c3.number_input("Min bedrooms", key=_key("min_bedrooms"), min_value=0)
         c4.number_input(
             "Max bedrooms", key=_key("max_bedrooms"), min_value=0,
@@ -271,7 +283,13 @@ def _locate_listing() -> None:
     st.session_state[_key("latitude")] = location.latitude
     st.session_state[_key("longitude")] = location.longitude
     st.session_state[_key("use_url")] = False
-    _set_feedback("success", f"Search centred on “{details.listing.name}”.")
+    group = property_group(details.listing.property_type)
+    if group is not PropertyGroup.OTHER:
+        st.session_state[_key("property_groups")] = [group.value]
+    _set_feedback(
+        "success",
+        f"Search centred on “{details.listing.name}”; comparing with {group.value}s.",
+    )
 
 
 def _set_feedback(kind: str, message: str) -> None:
@@ -312,7 +330,8 @@ def _init_state(base: dict[str, Any]) -> None:
         value = getattr(values, field.name)
         if field.name in OPTIONAL_NUMBERS and value is None:
             value = 0  # number widgets show 0 = no limit
-        st.session_state[_key(field.name)] = list(value) if field.name == "durations" else value
+        is_list = field.name in {"durations", "property_groups"}
+        st.session_state[_key(field.name)] = list(value) if is_list else value
     for name in MONEY_FIELDS:
         forget_money_input(_key(name))  # rebuild the formatted text from the loaded value
 
@@ -331,6 +350,7 @@ def _currency() -> str:
 def _current_values() -> FormValues:
     values = {f.name: st.session_state[_key(f.name)] for f in fields(FormValues)}
     values["durations"] = tuple(values["durations"] or ())
+    values["property_groups"] = tuple(values["property_groups"] or ())
     for name in OPTIONAL_NUMBERS:
         values[name] = values[name] or None  # 0 = no limit
     return FormValues(**values)

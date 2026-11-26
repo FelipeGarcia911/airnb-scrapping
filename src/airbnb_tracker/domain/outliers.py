@@ -73,6 +73,33 @@ class OutlierPolicy:
     placeholder_ratio: float = 8.0
     min_segment_size: int = 8  # smaller segments are compared with the whole market
 
+    @classmethod
+    def for_sensitivity(cls, sensitivity: OutlierSensitivity) -> OutlierPolicy:
+        return _POLICIES[sensitivity]
+
+
+class OutlierSensitivity(StrEnum):
+    """How aggressively prices far from their segment are left out."""
+
+    LENIENT = "lenient"  # only clear errors and extreme outliers (3x the median and beyond)
+    BALANCED = "balanced"  # also listings 2.5x the median that are statistically extreme
+    STRICT = "strict"  # also the premium tier, about 2x the median
+
+    @property
+    def label(self) -> str:
+        return {
+            OutlierSensitivity.LENIENT: "Lenient: only clear errors",
+            OutlierSensitivity.BALANCED: "Balanced: errors and extreme prices",
+            OutlierSensitivity.STRICT: "Strict: also the premium tier (2× the segment)",
+        }[self]
+
+
+_POLICIES = {
+    OutlierSensitivity.LENIENT: OutlierPolicy(z_threshold=3.5, high_ratio=3.0, low_ratio=0.33),
+    OutlierSensitivity.BALANCED: OutlierPolicy(z_threshold=3.5, high_ratio=2.5, low_ratio=0.4),
+    OutlierSensitivity.STRICT: OutlierPolicy(z_threshold=2.5, high_ratio=2.0, low_ratio=0.5),
+}
+
 
 class PriceOutlierDetector:
     def __init__(self, policy: OutlierPolicy | None = None) -> None:

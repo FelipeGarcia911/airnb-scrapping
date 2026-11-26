@@ -13,7 +13,7 @@ from airbnb_tracker.interface.web.theme import CORAL, MUTED
 
 def render() -> None:
     st.title("Comp set")
-    st.caption("Step 3 of 4 · Results")
+    st.caption("Step 3 of 5 · Market analytics")
     st.markdown(
         "The listings you compete with: the nearest stays matching your filters. "
         "Your listing is shown in coral."

@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
 from airbnb_tracker.domain.entities import Listing, RoomType
+from airbnb_tracker.domain.property_types import PropertyGroup, property_group
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId
 
 
@@ -111,3 +112,13 @@ class ExcludeIds(ListingSpecification):
 
     def is_satisfied_by(self, listing: Listing) -> bool:
         return listing.id not in self._ids
+
+
+class InPropertyGroups(ListingSpecification):
+    """Same kind of property (apartments, houses, rural stays…)."""
+
+    def __init__(self, groups: Iterable[PropertyGroup]) -> None:
+        self._groups = frozenset(groups)
+
+    def is_satisfied_by(self, listing: Listing) -> bool:
+        return property_group(listing.property_type) in self._groups

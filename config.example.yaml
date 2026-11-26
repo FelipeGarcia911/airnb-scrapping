@@ -27,6 +27,7 @@ search:
   price_max: null
   min_rating: null
   exclude_ids: []
+  property_groups: [apartment]  # apartment | house | rural | other; null = every kind
 
 # Pricing scenarios: every stay length x every check-in date.
 stays:
@@ -50,6 +51,11 @@ scraping:
   min_delay_seconds: 3      # pause between requests: keep usage moderate
   max_attempts: 3
   backoff_seconds: 5
+
+# Market analysis defaults (the web UI can change them per session).
+analysis:
+  exclude_outliers: true
+  outlier_sensitivity: strict  # lenient | balanced | strict
 
 storage:
   database_path: data/airbnb.db

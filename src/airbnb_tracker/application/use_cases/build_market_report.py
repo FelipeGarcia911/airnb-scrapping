@@ -8,10 +8,15 @@ from dataclasses import dataclass, replace
 
 from airbnb_tracker.application.dto import DurationReport, ReportBundle
 from airbnb_tracker.application.ports import CalendarRepository, Clock, SnapshotRepository
-from airbnb_tracker.application.use_cases.price_outliers import detect_price_outliers
+from airbnb_tracker.application.use_cases.price_outliers import (
+    comparable_only,
+    detect_price_outliers,
+)
 from airbnb_tracker.domain.entities import ListingOffer, Snapshot
 from airbnb_tracker.domain.market_analysis import DiscountStats, MarketAnalyzer
+from airbnb_tracker.domain.outliers import OutlierPolicy, PriceOutlierDetector
 from airbnb_tracker.domain.profile import AvailabilitySummary
+from airbnb_tracker.domain.property_types import PropertyGroup
 from airbnb_tracker.domain.value_objects import ListingId, Money, StayPeriod
 
 
@@ -22,6 +27,8 @@ class BuildReportQuery:
     my_nightly_price: Money | None = None
     availability_window_days: int = 60
     exclude_outliers: bool = True  # leave implausible prices out of every statistic
+    outlier_policy: OutlierPolicy | None = None
+    property_groups: frozenset[PropertyGroup] | None = None  # comp set: same kind of property
 
 
 class BuildMarketReportUseCase:
@@ -39,7 +46,8 @@ class BuildMarketReportUseCase:
 
     def execute(self, query: BuildReportQuery) -> ReportBundle:
         latest = [s for s in map(self._snapshots.latest, query.stays) if s is not None]
-        outliers = detect_price_outliers(latest)
+        latest = comparable_only(latest, query.property_groups, keep=query.my_listing_id)
+        outliers = detect_price_outliers(latest, PriceOutlierDetector(query.outlier_policy))
         if query.exclude_outliers and outliers:
             latest = [_without(snapshot, set(outliers)) for snapshot in latest]
         by_nights: dict[int, list[Snapshot]] = defaultdict(list)

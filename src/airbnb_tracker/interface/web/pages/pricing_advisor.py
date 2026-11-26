@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -13,15 +14,19 @@ from airbnb_tracker.interface.web.components import (
     nights_picker,
     section,
 )
-from airbnb_tracker.interface.web.formatting import format_money
+from airbnb_tracker.interface.web.formatting import forget_money_input, format_money
 from airbnb_tracker.interface.web.guards import require_data, require_settings
+from airbnb_tracker.interface.web.navigation import go_to
+from airbnb_tracker.interface.web.pages.earnings import CALCULATOR_NIGHTS, CALCULATOR_PRICE
+from airbnb_tracker.interface.web.theme import CORAL, INK, MUTED
 
+_GO_TO_CALCULATOR = "_go_to_calculator"
 _EFFECT = {1: "▲ raises", 0: "— neutral", -1: "▼ lowers"}
 
 
 def render() -> None:
     st.title("Pricing advisor")
-    st.caption("Step 3 of 4 · Results")
+    st.caption("Step 4 of 5 · Pricing & finances")
     st.markdown(
         "A suggested nightly rate for **your** listing, based on the competitors most like "
         "it, then nudged by what makes yours stronger or weaker. Use it as a starting point "
@@ -77,9 +82,32 @@ def render() -> None:
         return
 
     _headline(advice, currency)
+    _context(advice, nightly, currency)
+    _percentile_explorer(advice, currency)
     _signals(advice)
     _seasonal(pricing, advice, currency)
     _comparables_table(advice)
+
+
+def _context(advice: analytics.PriceAdvice, nightly: pd.Series, currency: str) -> None:
+    """Why the suggestion may differ from the market median, and how much to trust it."""
+    market = float(nightly.median()) if len(nightly) else None
+    if market:
+        gap = (advice.median / market - 1) * 100
+        if abs(gap) >= 15:
+            direction = "more" if gap > 0 else "less"
+            st.caption(
+                f":material/info: Your closest comparables charge **{abs(gap):.0f}% {direction}** "
+                f"than the comp set overall (median {format_money(advice.median, currency)} vs "
+                f"{format_money(market, currency)}): listings like yours (same bedrooms, "
+                "bathrooms and area) are a different price tier. Relax the filters above to "
+                "compare with the wider market."
+            )
+    if len(advice.comparables) < analytics.CONFIDENT_COMPARABLES:
+        st.caption(
+            f":orange[:material/warning: Only {len(advice.comparables)} comparables: a single "
+            "listing moves the percentiles a lot. Widen the distance for a steadier estimate.]"
+        )
 
 
 def _headline(advice: analytics.PriceAdvice, currency: str) -> None:
@@ -110,6 +138,104 @@ def _headline(advice: analytics.PriceAdvice, currency: str) -> None:
         f"{advice.target_percentile}). Staying between {format_money(advice.p25, currency)} "
         f"and {format_money(advice.p75, currency)} keeps you competitive."
     )
+
+
+def _percentile_explorer(advice: analytics.PriceAdvice, currency: str) -> None:
+    section(
+        "Explore other positions",
+        "Pick a percentile to see the nightly price that puts you there: P20 means 20% of "
+        "comparables are cheaper than you, P80 means 80% are.",
+    )
+    prices = advice.comparables["nightly"]
+    chosen = st.slider(
+        "Percentile",
+        min_value=5,
+        max_value=95,
+        value=advice.target_percentile,
+        step=1,
+        format="P%d",
+        key="advisor_percentile",
+    )
+    price = float(prices.quantile(chosen / 100))
+    cheaper = int((prices < price).sum())
+    c1, c2, c3 = st.columns(3)
+    c1.metric(f"Nightly price at P{chosen}", format_money(price, currency),
+              delta=f"{(price / advice.suggested - 1) * 100:+.0f}% vs suggested",
+              delta_color="off")  # fmt: skip
+    if advice.nights >= analytics.MONTHLY_STAY_NIGHTS:
+        c2.metric("Monthly equivalent", format_money(price * 30, currency))
+    c3.metric("Comparables cheaper than this", f"{cheaper} of {len(prices)}")
+
+    st.altair_chart(_position_chart(advice, chosen, price, currency), width="stretch")
+
+    ladder = pd.DataFrame(
+        {
+            "Percentile": [f"P{p}" for p in range(10, 100, 10)],
+            "Nightly price": [round(float(prices.quantile(p / 100))) for p in range(10, 100, 10)],
+        }
+    )
+    if advice.nights >= analytics.MONTHLY_STAY_NIGHTS:
+        ladder["Monthly"] = ladder["Nightly price"] * 30
+    with st.expander("Price at every 10th percentile"):
+        amount = st.column_config.NumberColumn(format="localized")
+        st.dataframe(ladder, hide_index=True, width="stretch",
+                     column_config={"Nightly price": amount, "Monthly": amount})  # fmt: skip
+
+    st.button(
+        f"Calculate earnings at {format_money(price, currency)}",
+        icon=":material/calculate:",
+        on_click=_send_to_calculator,
+        args=(round(price), advice.nights),
+        help="Opens the earnings calculator with this price and stay length.",
+    )
+    if st.session_state.pop(_GO_TO_CALCULATOR, False):
+        go_to("earnings")
+
+
+def _position_chart(
+    advice: analytics.PriceAdvice, chosen: int, price: float, currency: str
+) -> alt.LayerChart | alt.FacetChart:
+    comps = advice.comparables[["title", "nightly"]]
+    band = (
+        alt.Chart(pd.DataFrame({"low": [advice.p25], "high": [advice.p75]}))
+        .mark_rect(color=CORAL, opacity=0.08)
+        .encode(x="low:Q", x2="high:Q")
+    )
+    ticks = (
+        alt.Chart(comps)
+        .mark_tick(thickness=2, size=34, color=MUTED)
+        .encode(
+            x=alt.X("nightly:Q", title=f"Nightly price ({currency})", scale=alt.Scale(zero=False)),
+            tooltip=["title", alt.Tooltip("nightly:Q", format=",.0f")],
+        )
+    )
+    markers = pd.DataFrame(
+        {
+            "price": [advice.suggested, price],
+            "label": [f"▼ Suggested · P{advice.target_percentile}", f"▲ Your choice · P{chosen}"],
+            "who": ["suggested", "chosen"],
+        }
+    )
+    colors = alt.Scale(domain=["suggested", "chosen"], range=[CORAL, INK])
+    rules = (
+        alt.Chart(markers)
+        .mark_rule(strokeWidth=3)
+        .encode(x="price:Q", color=alt.Color("who:N", scale=colors, legend=None))
+    )
+    labels = [
+        alt.Chart(markers[markers["who"] == who])
+        .mark_text(dy=dy, fontWeight="bold", fontSize=13)
+        .encode(x="price:Q", text="label:N", color=alt.Color("who:N", scale=colors, legend=None))
+        for who, dy in (("suggested", -32), ("chosen", 32))
+    ]
+    return alt.layer(band, ticks, rules, *labels).properties(height=150)
+
+
+def _send_to_calculator(price: int, nights: int) -> None:
+    st.session_state[CALCULATOR_PRICE] = price
+    forget_money_input(CALCULATOR_PRICE)  # the formatted text is rebuilt from the new price
+    st.session_state[CALCULATOR_NIGHTS] = nights
+    st.session_state[_GO_TO_CALCULATOR] = True
 
 
 def _signals(advice: analytics.PriceAdvice) -> None:

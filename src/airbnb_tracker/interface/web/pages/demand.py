@@ -18,7 +18,7 @@ _HORIZON_DAYS = 180
 
 def render() -> None:
     st.title("Demand")
-    st.caption("Step 3 of 4 · Results")
+    st.caption("Step 3 of 5 · Market analytics")
     st.markdown(
         "Two views of demand: **ahead**, from how full competitors' calendars already are, "
         "and **behind**, from when guests left reviews in the last two years."

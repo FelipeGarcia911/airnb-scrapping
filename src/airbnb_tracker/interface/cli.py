@@ -87,6 +87,7 @@ class TrackerCli:
                 center=settings.search.center,
                 parts=parts,
                 competitors=top,
+                property_groups=settings.search.comp_set_groups,
                 max_listings=max_listings,
                 details_refresh=settings.enrich.details_refresh,
                 calendar_refresh=settings.enrich.calendar_refresh,
@@ -111,6 +112,9 @@ class TrackerCli:
                 my_listing_id=settings.my_listing.listing_id,
                 my_nightly_price=Money(price, settings.scraping.currency) if price else None,
                 availability_window_days=settings.enrich.availability_window_days,
+                exclude_outliers=settings.analysis.exclude_outliers,
+                outlier_policy=settings.analysis.outlier_policy,
+                property_groups=settings.search.comp_set_groups,
             )
         )
         self._c.report_exporter().export(bundle)
@@ -124,6 +128,8 @@ class TrackerCli:
                 my_listing_id=settings.my_listing.listing_id,
                 my_location=settings.search.center,
                 min_nights_window_days=settings.enrich.availability_window_days,
+                outlier_policy=settings.analysis.outlier_policy,
+                property_groups=settings.search.comp_set_groups,
             ),
             self._c.dataset_exporter(args.format),
         )

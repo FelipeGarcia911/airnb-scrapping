@@ -144,22 +144,26 @@ Useful options:
 uv run airbnb-tracker ui        # opens http://localhost:8501
 ```
 
-A local web app (Streamlit) organised as four steps, like the comp-set dashboards of
-market tools: define your comp set, collect, analyse, export.
+A local web app (Streamlit) organised as five steps, like the comp-set dashboards of
+market tools: define your comp set, collect, analyse the market, price and plan, export.
 
 | Step | Page | What it is for |
 |---|---|---|
-| **1 · Set up** | Set up my market | Your listing (centre the search on it from its link), area, comparable filters, stay lengths and comp set size, with the resulting searches and run time. *Save and continue* takes you to step 2. |
-| **2 · Collect** | Collect data | Starts the update (prices → listing details → export files) and follows it live: current step, what is being read, items done, elapsed time and time left. Partial updates and the log are here too. |
-| **3 · Results** | Overview | Key numbers of your comp set and plain-language takeaways. |
-| | Pricing advisor | A suggested (re)opening rate: a percentile of your closest comparables (same bedrooms, bathrooms, distance), nudged by your rating, reviews and amenities, with a rate per check-in date. Every factor is shown. |
-| | Prices | Price ranges per stay length, length-of-stay discount curve and each listing's ladder, discounts, your position and seasonality by check-in date. |
-| | Demand | Upcoming demand calendar (share of the comp set not bookable, day by day) with the busiest periods, and historical seasonality from review dates. |
-| | Comp set | Map and list of competitors, and what price-moving amenities are worth (median price with vs without, same bedrooms). |
-| | Positioning | Value map: price versus rating with quadrants (premium, overpriced, good value, budget) and where you fit. |
-| | Availability | Nights not bookable in the next 30/60/90 days, minimum stays, and short-stay vs monthly competitors compared. |
-| | Data quality | Price outliers detected and left out of the statistics (with the reason), price distribution per segment, and deep discounts that were kept. |
-| **4 · Export** | Export | Download every table as CSV or write them all to the exports folder. |
+| **1 · Set up** | Set up my market | Your listing (centre the search on it from its link), area, comparable filters including the **kind of property** (apartments, houses, rural stays), stay lengths and comp set size. |
+| **2 · Collect** | Collect data | Starts the update (prices → listing details → export files) and follows it live, with partial updates and the log. |
+| **3 · Market analytics** | Market overview | Key numbers of your comp set, plain-language takeaways and links to every view. |
+| | Comp set | Map and list of competitors, and what price-moving amenities are worth (same bedrooms). |
+| | Prices | Price ranges per stay length, length-of-stay discount curve, each listing's ladder, seasonality. |
+| | Demand | Upcoming demand calendar with the busiest periods, and historical seasonality from reviews. |
+| | Availability | Nights not bookable, minimum stays, short-stay vs monthly competitors. |
+| | Positioning | Value map: price versus rating with quadrants and where you fit. |
+| | Data quality | Price outliers left out (with the reason), price distribution per segment, deep discounts kept. |
+| **4 · Pricing & finances** | Pricing advisor | Suggested (re)opening rate from your closest comparables, every factor shown, a percentile slider with markers, the rate per check-in date, and why it differs from the market. |
+| | Earnings calculator | Airbnb's fees and taxes, your costs, a typical month's profit, break-even price, reverse mode and the settings to enter in Airbnb. |
+| **5 · Export** | Export | Download every table as CSV or write them all to the exports folder. |
+
+The sidebar shows update progress and the analysis switches: exclude price outliers and the
+outlier sensitivity (lenient, balanced, strict).
 
 Every dashboard follows the same pattern: what it shows, the chart or table, *how to read
 it*, a plain-language takeaway computed from your data, and its caveats. Results always use
@@ -320,6 +324,14 @@ cut-offs fail both ways, so detection was designed on real data:
   segment median);
 - prices ≥ 8× the segment median are always flagged: as `placeholder_price` when the
   listing was never booked (no reviews), otherwise as `extreme_high`.
+
+Three sensitivities are available (`analysis.outlier_sensitivity` or the sidebar):
+**lenient** (≥ 3× the median), **balanced** (≥ 2.5×, z > 3.5) and **strict**, the default
+(≥ 2×, z > 2.5, which also leaves out the premium tier).
+
+Before any of this, the comp set only keeps the **same kind of property**
+(`search.property_groups`: apartments, houses or rural stays): a country estate does not
+compete with a city apartment, and mixing them inflates prices more than any data error.
 
 Flagged listings are **left out of every statistic** (reports and web UI; a sidebar switch
 includes them back) but **never deleted**: downloads keep them, marked in `price_outlier`.

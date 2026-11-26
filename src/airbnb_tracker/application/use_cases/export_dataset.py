@@ -18,9 +18,14 @@ from airbnb_tracker.application.ports import (
     SearchRunRepository,
     SnapshotRepository,
 )
-from airbnb_tracker.application.use_cases.price_outliers import detect_price_outliers
+from airbnb_tracker.application.use_cases.price_outliers import (
+    comparable_only,
+    detect_price_outliers,
+)
 from airbnb_tracker.domain.entities import Listing
+from airbnb_tracker.domain.outliers import OutlierPolicy, PriceOutlierDetector
 from airbnb_tracker.domain.profile import Review, reviews_since
+from airbnb_tracker.domain.property_types import PropertyGroup
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId
 
 RECENT_REVIEWS_WINDOW = timedelta(days=90)
@@ -32,6 +37,8 @@ class ExportQuery:
     my_listing_id: ListingId | None = None
     my_location: GeoPoint | None = None
     min_nights_window_days: int = 60
+    outlier_policy: OutlierPolicy | None = None
+    property_groups: frozenset[PropertyGroup] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +60,10 @@ class ExportDatasetUseCase:
     def build(self, query: ExportQuery) -> Dataset:
         src = self._sources
         snapshots = sorted(src.snapshots.all_snapshots(), key=lambda s: s.captured_at)
-        outliers = detect_price_outliers(snapshots)
+        outliers = detect_price_outliers(
+            comparable_only(snapshots, query.property_groups, keep=query.my_listing_id),
+            PriceOutlierDetector(query.outlier_policy),
+        )
         profiles = src.profiles.latest_profiles()
         latest_calendars = src.calendars.latest_calendars()
         reviews = sorted(

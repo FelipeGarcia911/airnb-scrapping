@@ -39,6 +39,7 @@ class FormValues:
     price_min: int | None = None
     price_max: int | None = None
     durations: tuple[int, ...] = (20, 30, 60)
+    property_groups: tuple[str, ...] = ()  # empty = every kind of property
     first_check_in_days: int = 7
     every_days: int = 30
     horizon_days: int = 180
@@ -82,6 +83,7 @@ def from_raw(raw: dict[str, Any]) -> FormValues:
         price_min=_opt_int(search.get("price_min")),
         price_max=_opt_int(search.get("price_max")),
         durations=tuple(int(d) for d in stays.get("durations") or defaults.durations),
+        property_groups=tuple(str(g) for g in search.get("property_groups") or ()),
         first_check_in_days=int(stays.get("first_check_in_days", defaults.first_check_in_days)),
         every_days=int(stays.get("every_days", defaults.every_days)),
         horizon_days=int(stays.get("horizon_days", defaults.horizon_days)),
@@ -119,6 +121,7 @@ def to_raw(values: FormValues, base: dict[str, Any]) -> dict[str, Any]:
             "min_beds": values.min_beds,
             "price_min": values.price_min,
             "price_max": values.price_max,
+            "property_groups": list(values.property_groups) or None,
         }
     )
     raw.setdefault("stays", {}).update(

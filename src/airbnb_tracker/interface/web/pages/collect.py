@@ -20,7 +20,7 @@ from airbnb_tracker.interface.web.status import (
 
 def render() -> None:
     st.title("Collect data")
-    st.caption("Step 2 of 4")
+    st.caption("Step 2 of 5")
     st.markdown(
         "Searches Airbnb with your settings and stores the results. Each update adds to the "
         "history, so running it every few days shows how prices and availability move."

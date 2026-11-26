@@ -16,6 +16,7 @@ import pandas as pd
 MONTHLY_STAY_NIGHTS = 28
 PERCENTILE_STEP = 8  # how far each pricing signal moves the target percentile
 MIN_COMPARABLES = 5
+CONFIDENT_COMPARABLES = 15  # below this, percentiles move a lot with one listing
 MIN_GROUP_SIZE = 5
 CONFIDENT_GROUP_SIZE = 10  # both sides at least this big: the difference is worth quoting
 

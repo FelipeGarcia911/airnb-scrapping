@@ -19,6 +19,7 @@ from typing import Any
 from airbnb_tracker.application.dto import Dataset, ListingRecord, SearchRun
 from airbnb_tracker.domain.entities import Snapshot
 from airbnb_tracker.domain.profile import CalendarSnapshot, Review
+from airbnb_tracker.domain.property_types import property_group
 from airbnb_tracker.domain.value_objects import Money
 
 LIST_SEPARATOR = " | "
@@ -37,6 +38,7 @@ def listing_rows(records: Sequence[ListingRecord]) -> Iterator[dict[str, Any]]:
             "longitude": listing.location.longitude if listing.location else None,
             "distance_km": record.distance_km,
             "property_type": listing.property_type,
+            "property_group": property_group(listing.property_type).value,
             "room_type": listing.room_type.value,
             "bedrooms": listing.bedrooms,
             "bathrooms": listing.bathrooms,

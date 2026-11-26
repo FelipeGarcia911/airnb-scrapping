@@ -26,6 +26,7 @@ from airbnb_tracker.application.ports import (
 )
 from airbnb_tracker.application.progress import Phase, ProgressEvent, ProgressListener, silent
 from airbnb_tracker.domain.profile import CalendarSnapshot, ListingProfile
+from airbnb_tracker.domain.property_types import PropertyGroup, property_group
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, StayPeriod
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class EnrichCommand:
     center: GeoPoint | None = None
     parts: frozenset[EnrichPart] = field(default_factory=lambda: frozenset(EnrichPart))
     competitors: int | None = 50  # only the N nearest competitors (None = all)
+    property_groups: frozenset[PropertyGroup] | None = None  # None = every kind
     max_listings: int = 50
     details_refresh: timedelta = timedelta(days=7)
     calendar_refresh: timedelta = timedelta(days=2)
@@ -123,6 +125,10 @@ class EnrichListingsUseCase:
         for stay in command.stays:
             snapshot = self._repos.snapshots.latest(stay)
             for offer in snapshot.offers if snapshot else ():
+                if command.property_groups and (
+                    property_group(offer.listing.property_type) not in command.property_groups
+                ):
+                    continue
                 names[offer.listing.id] = offer.listing.name
                 location = offer.listing.location
                 distances[offer.listing.id] = (

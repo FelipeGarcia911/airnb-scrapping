@@ -15,6 +15,8 @@ import yaml
 from airbnb_tracker.application.dto import SearchFilters
 from airbnb_tracker.domain.entities import RoomType
 from airbnb_tracker.domain.exceptions import DomainError
+from airbnb_tracker.domain.outliers import OutlierPolicy, OutlierSensitivity
+from airbnb_tracker.domain.property_types import PropertyGroup
 from airbnb_tracker.domain.stay_planner import plan_stays
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, StayPeriod
 
@@ -45,6 +47,11 @@ class SearchSettings:
     max_bedrooms: int | None = None
     min_rating: float | None = None
     exclude_ids: tuple[ListingId, ...] = ()
+    property_groups: tuple[PropertyGroup, ...] | None = None  # None = every kind
+
+    @property
+    def comp_set_groups(self) -> frozenset[PropertyGroup] | None:
+        return frozenset(self.property_groups) if self.property_groups else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +97,16 @@ class StorageSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisSettings:
+    outlier_sensitivity: OutlierSensitivity = OutlierSensitivity.STRICT
+    exclude_outliers: bool = True
+
+    @property
+    def outlier_policy(self) -> OutlierPolicy:
+        return OutlierPolicy.for_sensitivity(self.outlier_sensitivity)
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     my_listing: MyListingSettings
     search: SearchSettings
@@ -97,6 +114,7 @@ class AppSettings:
     enrich: EnrichSettings
     scraping: ScrapingSettings
     storage: StorageSettings
+    analysis: AnalysisSettings = field(default_factory=AnalysisSettings)
 
 
 def load_settings(path: Path) -> AppSettings:
@@ -128,6 +146,7 @@ def parse_settings(raw: Mapping[str, Any], base_dir: Path) -> AppSettings:
             enrich=_parse_enrich(_section(raw, "enrich")),
             scraping=_parse_scraping(_section(raw, "scraping")),
             storage=_parse_storage(_section(raw, "storage"), base_dir),
+            analysis=_parse_analysis(_section(raw, "analysis")),
         )
     except (DomainError, ValueError, TypeError, KeyError, InvalidOperation) as error:
         raise ConfigurationError(f"Invalid configuration: {error}") from error
@@ -186,6 +205,11 @@ def _parse_search(raw: Mapping[str, Any]) -> SearchSettings:
         max_bedrooms=_opt(int, raw.get("max_bedrooms")),
         min_rating=_opt(float, raw.get("min_rating")),
         exclude_ids=tuple(ListingId(str(v)) for v in raw.get("exclude_ids") or []),
+        property_groups=(
+            tuple(PropertyGroup(str(g)) for g in raw["property_groups"])
+            if raw.get("property_groups")
+            else None
+        ),
     )
 
 
@@ -224,6 +248,13 @@ def _parse_scraping(raw: Mapping[str, Any]) -> ScrapingSettings:
         min_delay_seconds=float(raw.get("min_delay_seconds", defaults.min_delay_seconds)),
         max_attempts=int(raw.get("max_attempts", defaults.max_attempts)),
         backoff_seconds=float(raw.get("backoff_seconds", defaults.backoff_seconds)),
+    )
+
+
+def _parse_analysis(raw: Mapping[str, Any]) -> AnalysisSettings:
+    return AnalysisSettings(
+        outlier_sensitivity=OutlierSensitivity(str(raw.get("outlier_sensitivity", "strict"))),
+        exclude_outliers=bool(raw.get("exclude_outliers", True)),
     )
 
 

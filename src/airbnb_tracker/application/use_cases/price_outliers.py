@@ -5,6 +5,7 @@ from __future__ import annotations
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import replace
 
 from airbnb_tracker.domain.entities import Listing, Snapshot
 from airbnb_tracker.domain.outliers import (
@@ -13,6 +14,7 @@ from airbnb_tracker.domain.outliers import (
     PricePoint,
     segment_of,
 )
+from airbnb_tracker.domain.property_types import PropertyGroup, property_group
 from airbnb_tracker.domain.value_objects import ListingId, StayPeriod
 
 
@@ -46,3 +48,24 @@ def detect_price_outliers(
         for listing_id, values in prices.items()
     ]
     return (detector or PriceOutlierDetector()).detect(points)
+
+
+def comparable_only(
+    snapshots: Sequence[Snapshot],
+    groups: frozenset[PropertyGroup] | None,
+    keep: ListingId | None = None,
+) -> list[Snapshot]:
+    """Keep listings of the given property groups (and ``keep``, usually yours)."""
+    if not groups:
+        return list(snapshots)
+    return [
+        replace(
+            snapshot,
+            offers=tuple(
+                o
+                for o in snapshot.offers
+                if o.listing.id == keep or property_group(o.listing.property_type) in groups
+            ),
+        )
+        for snapshot in snapshots
+    ]

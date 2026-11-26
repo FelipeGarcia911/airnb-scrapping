@@ -31,6 +31,7 @@ from airbnb_tracker.domain.specifications import (
     AnyListing,
     ExcludeIds,
     HasRoomType,
+    InPropertyGroups,
     ListingSpecification,
     MaxBedrooms,
     MinBedrooms,
@@ -155,6 +156,8 @@ class Container:
             spec = spec & MinRating(search.min_rating)
         if search.exclude_ids:
             spec = spec & ExcludeIds(search.exclude_ids)
+        if search.property_groups:
+            spec = spec & InPropertyGroups(search.property_groups)
         return spec
 
     # --- use cases ------------------------------------------------------------------
