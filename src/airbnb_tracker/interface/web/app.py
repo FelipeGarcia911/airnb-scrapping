@@ -11,12 +11,13 @@ import streamlit as st
 
 from airbnb_tracker.interface.web import navigation, status
 from airbnb_tracker.interface.web.context import settings_or_none
-from airbnb_tracker.interface.web.data import database_version
+from airbnb_tracker.interface.web.data import database_version, outliers_toggle
 from airbnb_tracker.interface.web.pages import (
     availability,
     collect,
     comp_set,
     data_exports,
+    data_quality,
     demand,
     overview,
     positioning,
@@ -56,6 +57,8 @@ def main() -> None:
                             icon=":material/holiday_village:", url_path="comp-set"),
         "availability": st.Page(availability.render, title="Availability",
                                 icon=":material/calendar_month:", url_path="availability"),
+        "quality": st.Page(data_quality.render, title="Data quality",
+                           icon=":material/rule:", url_path="data-quality"),
         "export": st.Page(data_exports.render, title="Export", icon=":material/download:",
                           url_path="export"),
     }  # fmt: skip
@@ -75,11 +78,15 @@ def main() -> None:
                 pages["comp_set"],
                 pages["positioning"],
                 pages["availability"],
+                pages["quality"],
             ],
             "Step 4 · Export": [pages["export"]],
         }
     )
     status.sidebar_status()
+    with st.sidebar.container(border=True):
+        st.markdown("**Analysis**")
+        outliers_toggle()
     current.run()
 
 

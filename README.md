@@ -158,6 +158,7 @@ market tools: define your comp set, collect, analyse, export.
 | | Comp set | Map and list of competitors, and what price-moving amenities are worth (median price with vs without, same bedrooms). |
 | | Positioning | Value map: price versus rating with quadrants (premium, overpriced, good value, budget) and where you fit. |
 | | Availability | Nights not bookable in the next 30/60/90 days, minimum stays, and short-stay vs monthly competitors compared. |
+| | Data quality | Price outliers detected and left out of the statistics (with the reason), price distribution per segment, and deep discounts that were kept. |
 | **4 · Export** | Export | Download every table as CSV or write them all to the exports folder. |
 
 Every dashboard follows the same pattern: what it shows, the chart or table, *how to read
@@ -228,6 +229,7 @@ to keep just those.
 | `is_superhost`, `is_guest_favorite` | Badges |
 | `amenities` | Amenity list (pipe-separated ` \| ` in CSV) |
 | `photos` | Photo URLs |
+| `price_outlier` | Why the listing's price is treated as an outlier (`placeholder_price`, `extreme_high`, `extreme_low`), empty otherwise |
 | `last_review_at`, `reviews_last_90_days` | Latest review and recent review count (activity proxy) |
 | `details_collected_at` | When the listing page was read |
 
@@ -305,6 +307,24 @@ month.groupby(has_pool)["nightly_price"].median()
 
 ---
 
+## Price outliers
+
+Some listings carry prices nobody pays: hosts blocking dates with a huge price, long-term
+rentals, or a different kind of property (a country estate among city flats). Naive
+cut-offs fail both ways, so detection was designed on real data:
+
+- each listing is judged on the **median of all its prices**, against listings with the
+  **same number of bedrooms** (the whole market if that segment is small);
+- it is flagged only when it is **statistically extreme** (robust z-score > 3.5 on log
+  prices, using the median and MAD) **and** far in relative terms (≥ 2.5× or ≤ 0.4× the
+  segment median);
+- prices ≥ 8× the segment median are always flagged: as `placeholder_price` when the
+  listing was never booked (no reviews), otherwise as `extreme_high`.
+
+Flagged listings are **left out of every statistic** (reports and web UI; a sidebar switch
+includes them back) but **never deleted**: downloads keep them, marked in `price_outlier`.
+Genuine deep discounts (≥ 40%) are real offers and stay in; the Data quality page lists them.
+
 ## Known limitations
 
 - **`total_price` excludes cleaning fee, service fee and taxes.** Airbnb does not expose
@@ -315,8 +335,8 @@ month.groupby(has_pool)["nightly_price"].median()
   it to the stay total (60 nights = 2 months).
 - **"Unavailable" is not "booked"**: it may be a booking, a host block or a stay restriction.
   Treat it as an approximation of occupancy.
-- **Outliers**: some hosts set absurd prices (hundreds of millions) to block bookings. The
-  report uses percentiles, which are unaffected, but filter them in your own analyses.
+- **Outliers** are detected automatically (see above); when analysing the CSV files
+  yourself, filter on `price_outlier` to reproduce the app's numbers.
 - **Airbnb changes its internal API often.** Extraction relies on
   [pyairbnb](https://pypi.org/project/pyairbnb/); if something breaks, upgrade it first
   (`uv lock --upgrade-package pyairbnb && uv sync`).

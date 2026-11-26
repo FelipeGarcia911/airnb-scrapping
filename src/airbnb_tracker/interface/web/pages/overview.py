@@ -9,6 +9,7 @@ from airbnb_tracker.application.dto import DurationReport
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import settings_or_none
 from airbnb_tracker.interface.web.data import MarketData, load_market, money, my_price_input
+from airbnb_tracker.interface.web.guards import outlier_notice
 from airbnb_tracker.interface.web.navigation import link, next_step
 from airbnb_tracker.interface.web.status import run_estimate
 
@@ -35,6 +36,7 @@ def render() -> None:
         _waiting_for_data(settings)
         return
 
+    outlier_notice(data)
     focus = _focus_duration(data.bundle.durations)
     _kpis(settings, data, focus)
     _takeaways(settings, data, focus, price)

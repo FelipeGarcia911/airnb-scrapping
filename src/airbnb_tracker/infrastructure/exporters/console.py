@@ -32,6 +32,12 @@ class ConsoleReportExporter:
         else:
             lines += [_HEADER, *(_duration_line(d) for d in bundle.durations)]
             lines += _my_position(bundle)
+        if bundle.outliers:
+            state = "left out of" if bundle.outliers_excluded else "included in"
+            lines.append(
+                f"\n{len(bundle.outliers)} listing(s) with outlier prices {state} these numbers "
+                "(see Data quality in the web UI)."
+            )
         lines += ["", *_availability(bundle)]
         self._stream.write("\n".join(lines) + "\n")
         return "console"

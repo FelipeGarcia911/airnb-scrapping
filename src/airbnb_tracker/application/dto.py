@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from airbnb_tracker.domain.entities import Listing, ListingOffer, RoomType, Snapshot
 from airbnb_tracker.domain.market_analysis import PriceDistribution, PricePosition
+from airbnb_tracker.domain.outliers import OutlierFlag
 from airbnb_tracker.domain.profile import (
     Amenity,
     AvailabilitySummary,
@@ -112,6 +113,8 @@ class ReportBundle:
     availability_window_days: int
     my_unavailable_pct: float | None
     my_min_nights: int | None
+    outliers: tuple[OutlierFlag, ...] = ()
+    outliers_excluded: bool = True
 
 
 # --- export -----------------------------------------------------------------------------
@@ -126,6 +129,7 @@ class ListingRecord:
     minimum_nights: int | None
     last_review_at: datetime | None = None
     reviews_last_90_days: int | None = None
+    price_outlier: OutlierFlag | None = None
 
 
 @dataclass(frozen=True, slots=True)

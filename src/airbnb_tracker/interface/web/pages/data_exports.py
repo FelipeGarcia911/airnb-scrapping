@@ -40,7 +40,7 @@ def render() -> None:
         return
 
     for name, description in _TABLES.items():
-        frame = data.tables[name]
+        frame = data.raw_tables[name]  # downloads are always the full, unfiltered data
         with st.container(border=True):
             left, right = st.columns([4, 1], vertical_alignment="center")
             left.markdown(f"**{name}.csv** · {len(frame):,} rows")

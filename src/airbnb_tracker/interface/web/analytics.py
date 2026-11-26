@@ -501,6 +501,30 @@ def seasonal_prices(pricing: pd.DataFrame, comps: pd.DataFrame, nights: int,
     return table
 
 
+def deep_discounts(pricing: pd.DataFrame, listings: pd.DataFrame, min_pct: float) -> pd.DataFrame:
+    """Latest prices at least ``min_pct`` below the listing's own original price."""
+    latest = latest_pricing(pricing)
+    deep = latest[latest["discount_pct"].fillna(0) >= min_pct]
+    if deep.empty:
+        return pd.DataFrame()
+    deep = (
+        deep.sort_values("discount_pct", ascending=False)
+        .drop_duplicates(["listing_id", "nights"])
+        .merge(listings[["listing_id", "title"]], on="listing_id", how="left")
+    )
+    return pd.DataFrame(
+        {
+            "listing_id": deep["listing_id"],
+            "Listing": deep["title"],
+            "Nights": deep["nights"],
+            "Check-in": deep["check_in"],
+            "Original nightly": (deep["original_price"] / deep["nights"]).round(0),
+            "Nightly paid": deep["nightly_price"].round(0),
+            "Discount": deep["discount_pct"].round(0),
+        }
+    )
+
+
 def as_float(value: object) -> float | None:
     """A pandas cell as a plain float (None for missing or non-numeric values)."""
     try:

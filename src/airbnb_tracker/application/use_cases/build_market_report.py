@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from airbnb_tracker.application.dto import DurationReport, ReportBundle
 from airbnb_tracker.application.ports import CalendarRepository, Clock, SnapshotRepository
+from airbnb_tracker.application.use_cases.price_outliers import detect_price_outliers
 from airbnb_tracker.domain.entities import ListingOffer, Snapshot
 from airbnb_tracker.domain.market_analysis import DiscountStats, MarketAnalyzer
 from airbnb_tracker.domain.profile import AvailabilitySummary
@@ -20,6 +21,7 @@ class BuildReportQuery:
     my_listing_id: ListingId | None = None
     my_nightly_price: Money | None = None
     availability_window_days: int = 60
+    exclude_outliers: bool = True  # leave implausible prices out of every statistic
 
 
 class BuildMarketReportUseCase:
@@ -37,6 +39,9 @@ class BuildMarketReportUseCase:
 
     def execute(self, query: BuildReportQuery) -> ReportBundle:
         latest = [s for s in map(self._snapshots.latest, query.stays) if s is not None]
+        outliers = detect_price_outliers(latest)
+        if query.exclude_outliers and outliers:
+            latest = [_without(snapshot, set(outliers)) for snapshot in latest]
         by_nights: dict[int, list[Snapshot]] = defaultdict(list)
         for snapshot in latest:
             by_nights[snapshot.stay.nights].append(snapshot)
@@ -55,6 +60,8 @@ class BuildMarketReportUseCase:
             availability_window_days=window,
             my_unavailable_pct=mine.unavailable_pct(window) if mine else None,
             my_min_nights=mine.typical_min_nights(window) if mine else None,
+            outliers=tuple(outliers.values()),
+            outliers_excluded=query.exclude_outliers,
         )
 
     def _duration_report(
@@ -80,3 +87,8 @@ class BuildMarketReportUseCase:
             position=analysis.position,
             percentile=analysis.percentile,
         )
+
+
+def _without(snapshot: Snapshot, excluded: set[ListingId]) -> Snapshot:
+    offers = tuple(o for o in snapshot.offers if o.listing.id not in excluded)
+    return replace(snapshot, offers=offers)

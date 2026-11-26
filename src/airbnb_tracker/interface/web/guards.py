@@ -32,4 +32,22 @@ def require_data(settings: AppSettings, my_price: float | None = None) -> Market
         )
         next_step("collect", "Go to step 2: collect data")
         return None
+    outlier_notice(data)
     return data
+
+
+def outlier_notice(data: MarketData) -> None:
+    count = len(data.bundle.outliers)
+    if not count:
+        return
+    plural = "listing" if count == 1 else "listings"
+    if data.bundle.outliers_excluded:
+        st.caption(
+            f":material/filter_alt: {count} {plural} with outlier prices left out of these "
+            "numbers (see **Data quality**; switch in the sidebar)."
+        )
+    else:
+        st.caption(
+            f":orange[:material/warning: {count} {plural} with outlier prices included in "
+            "these numbers.]"
+        )

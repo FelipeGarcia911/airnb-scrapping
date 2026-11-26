@@ -49,6 +49,7 @@ def listing_rows(records: Sequence[ListingRecord]) -> Iterator[dict[str, Any]]:
             "is_guest_favorite": listing.is_guest_favorite,
             "amenities": sorted(a.name for a in profile.amenities) if profile else None,
             "photos": list(listing.photos),
+            "price_outlier": record.price_outlier.reason.value if record.price_outlier else None,
             "last_review_at": _iso(record.last_review_at),
             "reviews_last_90_days": record.reviews_last_90_days,
             "details_collected_at": _iso(profile.captured_at if profile else None),

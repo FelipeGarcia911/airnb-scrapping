@@ -18,6 +18,7 @@ from airbnb_tracker.application.ports import (
     SearchRunRepository,
     SnapshotRepository,
 )
+from airbnb_tracker.application.use_cases.price_outliers import detect_price_outliers
 from airbnb_tracker.domain.entities import Listing
 from airbnb_tracker.domain.profile import Review, reviews_since
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId
@@ -52,6 +53,7 @@ class ExportDatasetUseCase:
     def build(self, query: ExportQuery) -> Dataset:
         src = self._sources
         snapshots = sorted(src.snapshots.all_snapshots(), key=lambda s: s.captured_at)
+        outliers = detect_price_outliers(snapshots)
         profiles = src.profiles.latest_profiles()
         latest_calendars = src.calendars.latest_calendars()
         reviews = sorted(
@@ -85,6 +87,7 @@ class ExportDatasetUseCase:
                         else None
                     ),
                     last_review_at=max((r.created_at for r in own_reviews), default=None),
+                    price_outlier=outliers.get(listing_id),
                     reviews_last_90_days=(
                         reviews_since(own_reviews, query.as_of - RECENT_REVIEWS_WINDOW)
                         if reviews_known

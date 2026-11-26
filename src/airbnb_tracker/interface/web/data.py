@@ -26,12 +26,21 @@ from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.formatting import format_money, money_input
 
 _MY_PRICE = "_my_nightly_price"
+EXCLUDE_OUTLIERS_KEY = "_exclude_outliers"
 
 
 @dataclass(frozen=True)
 class MarketData:
+    """``tables`` feed the analysis (price outliers removed when excluded);
+    ``raw_tables`` are exactly what was collected, for downloads and data quality."""
+
     bundle: ReportBundle
     tables: dict[str, pd.DataFrame]
+    raw_tables: dict[str, pd.DataFrame]
+
+    @property
+    def outlier_ids(self) -> set[str]:
+        return {str(flag.listing_id) for flag in self.bundle.outliers}
 
     @property
     def has_prices(self) -> bool:
@@ -60,15 +69,30 @@ def last_update(settings: AppSettings) -> datetime | None:
     return datetime.fromtimestamp(version, UTC) if version else None
 
 
+def excluding_outliers() -> bool:
+    return bool(st.session_state.get(EXCLUDE_OUTLIERS_KEY, True))
+
+
+def outliers_toggle() -> None:
+    """Global switch, shown in the sidebar: applies to every results page."""
+    st.session_state.setdefault(EXCLUDE_OUTLIERS_KEY, True)
+    st.toggle(
+        "Exclude price outliers",
+        key=EXCLUDE_OUTLIERS_KEY,
+        help="Leaves implausible prices (blocking prices, prices far outside their "
+        "segment) out of every statistic. They stay in the downloads. See Data quality.",
+    )
+
+
 def load_market(settings: AppSettings, my_price: float | None) -> MarketData | None:
     version = database_version(settings)
     if version is None:
         return None
-    return _load(str(config_path()), version, my_price or 0.0)
+    return _load(str(config_path()), version, my_price or 0.0, excluding_outliers())
 
 
 @st.cache_data(show_spinner="Loading your market data…")
-def _load(config: str, db_version: float, my_price: float) -> MarketData:
+def _load(config: str, db_version: float, my_price: float, exclude_outliers: bool) -> MarketData:
     del db_version  # cache key only: data reloads when the database changes
     settings = load_settings(Path(config))
     container = Container(settings)
@@ -82,6 +106,7 @@ def _load(config: str, db_version: float, my_price: float) -> MarketData:
                 Money(Decimal(str(my_price)), settings.scraping.currency) if my_price else None
             ),
             availability_window_days=settings.enrich.availability_window_days,
+            exclude_outliers=exclude_outliers,
         )
     )
     dataset = container.export_dataset.build(
@@ -92,16 +117,19 @@ def _load(config: str, db_version: float, my_price: float) -> MarketData:
             min_nights_window_days=settings.enrich.availability_window_days,
         )
     )
-    return MarketData(
-        bundle=bundle,
-        tables={
-            "listings": pd.DataFrame(listing_rows(dataset.listings)),
-            "pricing_snapshots": pd.DataFrame(pricing_rows(dataset.snapshots)),
-            "calendar_snapshots": pd.DataFrame(calendar_rows(dataset.calendars)),
-            "reviews": pd.DataFrame(review_rows(dataset.reviews)),
-            "search_runs": pd.DataFrame(search_run_rows(dataset.search_runs)),
-        },
-    )
+    raw = {
+        "listings": pd.DataFrame(listing_rows(dataset.listings)),
+        "pricing_snapshots": pd.DataFrame(pricing_rows(dataset.snapshots)),
+        "calendar_snapshots": pd.DataFrame(calendar_rows(dataset.calendars)),
+        "reviews": pd.DataFrame(review_rows(dataset.reviews)),
+        "search_runs": pd.DataFrame(search_run_rows(dataset.search_runs)),
+    }
+    tables = dict(raw)
+    flagged = {str(flag.listing_id) for flag in bundle.outliers}
+    pricing = raw["pricing_snapshots"]
+    if exclude_outliers and flagged and not pricing.empty:
+        tables["pricing_snapshots"] = pricing[~pricing["listing_id"].isin(flagged)]
+    return MarketData(bundle=bundle, tables=tables, raw_tables=raw)
 
 
 def my_price_input(settings: AppSettings) -> int | None:
