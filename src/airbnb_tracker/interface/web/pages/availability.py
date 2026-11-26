@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
 
+from airbnb_tracker.interface.web import analytics
+from airbnb_tracker.interface.web.components import caveat, insight, nights_picker, section
+from airbnb_tracker.interface.web.data import MarketData
+from airbnb_tracker.interface.web.formatting import format_money
 from airbnb_tracker.interface.web.guards import require_data, require_settings
+from airbnb_tracker.interface.web.theme import CORAL
 
 WINDOWS = (30, 60, 90)
 MONTHLY_NIGHTS = 20
@@ -56,12 +61,20 @@ def render() -> None:
             f"minimum stay {row['Min. nights']:g} nights."
         )
 
-    st.subheader("Minimum stay required")
-    st.caption("How many competitors require each minimum number of nights.")
+    section("Minimum stay required", "How many competitors require each minimum number of nights.")
     distribution = competitors["Min. nights"].value_counts().sort_index()
-    st.bar_chart(distribution.rename("Competitors"), height=240)
+    st.bar_chart(distribution.rename("Competitors"), height=240, color=CORAL)
+    share_short = (competitors["Min. nights"] <= 3).mean() * 100
+    insight(
+        f"**{share_short:.0f}%** of competitors accept stays of 3 nights or less. "
+        + (f"Your minimum of **{mine.iloc[0]['Min. nights']:g} nights** leaves you competing "
+           "only for long stays." if len(mine) and mine.iloc[0]["Min. nights"] >= 20 else
+           "Short minimum stays capture more bookings but more turnover.")
+    )  # fmt: skip
 
-    st.subheader("By competitor")
+    _segments(data, settings.scraping.currency)
+
+    section("By competitor", "Latest calendar of each competitor.")
     st.dataframe(
         per_listing.sort_values(["Yours", "Next 30 days"], ascending=[False, False]),
         hide_index=True,
@@ -74,6 +87,50 @@ def render() -> None:
             for w in WINDOWS
         },
     )
+
+
+def _segments(data: MarketData, currency: str) -> None:
+    section(
+        "Short-stay vs monthly competitors",
+        "Competitors grouped by the minimum stay they require: do monthly specialists price, "
+        "fill and perform differently?",
+    )
+    pricing = data.tables["pricing_snapshots"]
+    nights = nights_picker(pricing["nights"].unique(), key="segments_nights",
+                           label="Prices for")  # fmt: skip
+    table = analytics.min_stay_segments(
+        data.listings,
+        analytics.nightly_by_listing(pricing, nights),
+        analytics.unavailable_share(data.tables["calendar_snapshots"], date.today(), 60),
+    )
+    if table.empty:
+        st.caption("Minimum stays appear after calendars are collected.")
+        return
+    st.dataframe(
+        table,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Median nightly price": st.column_config.NumberColumn(format="localized"),
+            "Not bookable · next 60 days": st.column_config.ProgressColumn(
+                format="%.0f%%", min_value=0, max_value=100
+            ),
+        },
+    )
+    monthly = table[table["Segment"].str.startswith("Monthly")]
+    short = table[table["Segment"].str.startswith("Short")]
+    if not monthly.empty and not short.empty:
+        m, s = monthly.iloc[0], short.iloc[0]
+        if m["Median nightly price"] and s["Median nightly price"]:
+            gap = (m["Median nightly price"] / s["Median nightly price"] - 1) * 100
+            insight(
+                f"Monthly specialists ({m['Competitors']}) charge **{gap:+.0f}%** per night "
+                f"versus short-stay listings ({format_money(m['Median nightly price'], currency)}"
+                f" vs {format_money(s['Median nightly price'], currency)} for {nights}-night "
+                f"stays) and have **{m['Not bookable · next 60 days']:.0f}%** of the next 60 "
+                f"days not bookable vs {s['Not bookable · next 60 days']:.0f}%."
+            )
+    caveat("Long minimum stays also make calendars look emptier: short gaps cannot be booked.")
 
 
 def _per_listing(calendar: pd.DataFrame, analysed: pd.DataFrame) -> pd.DataFrame:

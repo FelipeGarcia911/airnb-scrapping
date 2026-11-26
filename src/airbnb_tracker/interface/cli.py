@@ -28,6 +28,7 @@ from airbnb_tracker.application.use_cases import (
     EnrichPart,
     ExportQuery,
     ScanMarketCommand,
+    latest_run_stays,
 )
 from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.domain.exceptions import DomainError
@@ -81,7 +82,7 @@ class TrackerCli:
         )
         summary = self._c.enrich_listings.execute(
             EnrichCommand(
-                stays=self._stays,
+                stays=self._collected_stays(),
                 priority_ids=[my_id] if my_id else [],
                 center=settings.search.center,
                 parts=parts,
@@ -106,7 +107,7 @@ class TrackerCli:
         price = args.my_price if args.my_price is not None else settings.my_listing.nightly_price
         bundle = self._c.build_report.execute(
             BuildReportQuery(
-                stays=self._stays,
+                stays=self._collected_stays(),
                 my_listing_id=settings.my_listing.listing_id,
                 my_nightly_price=Money(price, settings.scraping.currency) if price else None,
                 availability_window_days=settings.enrich.availability_window_days,
@@ -133,6 +134,10 @@ class TrackerCli:
         self.enrich(args)
         self.report(args)
         self.export(args)
+
+    def _collected_stays(self) -> list[StayPeriod]:
+        """Stays of the latest search: reports must follow what was actually collected."""
+        return latest_run_stays(self._c.repository) or self._stays
 
     def _print(self, text: str) -> None:
         print(text, file=self._out, flush=True)

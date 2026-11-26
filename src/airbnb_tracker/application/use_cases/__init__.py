@@ -15,6 +15,7 @@ from airbnb_tracker.application.use_cases.export_dataset import (
     ExportQuery,
     ExportSources,
 )
+from airbnb_tracker.application.use_cases.latest_run import latest_run_stays
 from airbnb_tracker.application.use_cases.scan_market import (
     ScanMarketCommand,
     ScanMarketUseCase,
@@ -36,4 +37,5 @@ __all__ = [
     "ScanMarketCommand",
     "ScanMarketUseCase",
     "ScanSummary",
+    "latest_run_stays",
 ]

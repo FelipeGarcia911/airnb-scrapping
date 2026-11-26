@@ -13,7 +13,7 @@ _TABLES = {
     "listings": "One row per listing: location, layout, rating, amenities, minimum stay, "
     "recent reviews. Yours is marked is_mine.",
     "pricing_snapshots": "One row per listing and search: stay dates, nights, original and "
-    "discounted price, position in Airbnb's results. Full history.",
+    "discounted price and position among the results kept. Full history.",
     "calendar_snapshots": "One row per listing and day: bookable or not, minimum nights. "
     "Every collection is kept, so availability can be compared over time.",
     "reviews": "One row per review: date, rating and language (no names or texts).",

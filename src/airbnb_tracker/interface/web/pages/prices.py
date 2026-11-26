@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 from airbnb_tracker.application.dto import DurationReport
+from airbnb_tracker.interface.web import analytics
+from airbnb_tracker.interface.web.components import caveat, insight, section
 from airbnb_tracker.interface.web.data import my_price_input
+from airbnb_tracker.interface.web.formatting import format_money
 from airbnb_tracker.interface.web.guards import require_data, require_settings
+from airbnb_tracker.interface.web.theme import CORAL, INK
 
 # Whole amounts with thousands separators (the browser's locale decides the separator).
 _AMOUNT = st.column_config.NumberColumn(format="localized")
@@ -24,6 +29,7 @@ def render() -> None:
     settings = require_settings()
     if settings is None:
         return
+    currency = settings.scraping.currency
     price = my_price_input(settings)
     data = require_data(settings, price)
     if data is None:
@@ -57,11 +63,18 @@ def render() -> None:
             ),
         },
     )
-    st.subheader("Price range by stay length")
-    st.caption("Nightly price: lower quarter, median and upper quarter of the comp set.")
-    st.bar_chart(frame, x="Nights", y=["P25", "Median", "P75"], stack=False, height=280)
+    distance_to_month = [abs(int(n) - 30) for n in frame["Nights"]]
+    focus = frame.iloc[distance_to_month.index(min(distance_to_month))]
+    p25, p75 = analytics.as_float(focus["P25"]), analytics.as_float(focus["P75"])
+    insight(
+        f"For **{focus['Nights']}-night stays**, half of the comp set charges between "
+        f"**{format_money(p25, currency)}** and **{format_money(p75, currency)}** per night; "
+        f"the typical price is **{format_money(analytics.as_float(focus['Median']), currency)}**."
+    )
 
-    _seasonality(data.tables["pricing_snapshots"])
+    pricing = data.tables["pricing_snapshots"]
+    _length_of_stay(pricing, data.listings, currency)
+    _seasonality(pricing)
 
 
 def _row(report: DurationReport) -> dict[str, object]:
@@ -82,6 +95,73 @@ def _row(report: DurationReport) -> dict[str, object]:
             else "—"
         ),
     }
+
+
+def _length_of_stay(pricing: pd.DataFrame, listings: pd.DataFrame, currency: str) -> None:
+    section(
+        "Length-of-stay discounts",
+        "How the nightly price falls as stays get longer. Long-stay guests compare monthly "
+        "totals, so this is where monthly pricing is won or lost.",
+    )
+    comp_ids = set(analytics.competitors(listings)["listing_id"]) or None
+    curve = analytics.los_curve(pricing, comp_ids)
+    if len(curve) < 2:
+        st.caption("Collect at least two stay lengths to compare them.")
+        return
+    chart_data = curve.reset_index()[["nights", "P25", "Median", "P75"]].melt(
+        "nights", var_name="Band", value_name="Nightly"
+    )
+    chart = (
+        alt.Chart(chart_data)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("nights:O", title="Stay length (nights)"),
+            y=alt.Y("Nightly:Q", title=f"Nightly price ({currency})", scale=alt.Scale(zero=False)),
+            color=alt.Color("Band:N", scale=alt.Scale(domain=["P25", "Median", "P75"],
+                            range=["#B0B0B0", CORAL, INK])),
+            tooltip=["nights", "Band", alt.Tooltip("Nightly:Q", format=",.0f")],
+        )
+        .properties(height=280)
+    )  # fmt: skip
+    left, right = st.columns([3, 2])
+    left.altair_chart(chart, width="stretch")
+    right.dataframe(
+        curve[["Median", "Change vs shortest", "Listings"]],
+        width="stretch",
+        column_config={
+            "Median": _AMOUNT,
+            "Change vs shortest": st.column_config.NumberColumn(format="%+.0f%%"),
+        },
+    )
+    shortest, longest = curve.index[0], curve.index[-1]
+    change = analytics.as_float(curve["Change vs shortest"].iloc[-1]) or 0.0
+    medians = analytics.by_label(curve["Median"])
+    monthly = medians[30] * 30 if 30 in medians else None
+    insight(
+        f"From {shortest} to {longest} nights the typical nightly price changes "
+        f"**{change:+.0f}%**."
+        + (
+            f" A typical month costs about **{format_money(monthly, currency)}**."
+            if monthly
+            else ""
+        )
+        + " If your discount for long stays is smaller than the market's, monthly guests will "
+        "find you expensive."
+    )
+    ladder = analytics.los_ladder(pricing, listings)
+    if not ladder.empty:
+        with st.expander("Discount ladder of each listing"):
+            drop_column = ladder.columns[-1]
+            st.dataframe(
+                ladder.rename(columns={"title": "Listing", "is_mine": "Yours"}),
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    **{c: _AMOUNT for c in ladder.columns if c.endswith("nights")},
+                    drop_column: st.column_config.NumberColumn(format="%.0f%%"),
+                },
+            )
+            caveat("Listings priced for both the shortest and longest stay lengths only.")
 
 
 def _seasonality(pricing: pd.DataFrame) -> None:
@@ -110,3 +190,11 @@ def _seasonality(pricing: pd.DataFrame) -> None:
         column_config=dict.fromkeys(table.columns, _AMOUNT),
     )
     st.line_chart(table, height=260)
+    if len(table) > 1:
+        overall = analytics.by_label(table.median(axis=1))
+        high, low = max(overall, key=overall.__getitem__), min(overall, key=overall.__getitem__)
+        insight(
+            f"Check-ins on **{high}** get the highest prices and on **{low}** the lowest "
+            f"({(overall[high] / overall[low] - 1) * 100:.0f}% apart): that is the seasonal "
+            "swing to reflect in your own calendar."
+        )

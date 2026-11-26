@@ -192,13 +192,22 @@ def _monthly_specialists(analysed: pd.DataFrame) -> int:
 
 def _explore() -> None:
     st.subheader("Explore")
-    c1, c2, c3 = st.columns(3)
-    with c1.container(border=True, height="stretch"):
-        link("prices", "Prices", ":material/payments:")
-        st.caption("Price ranges per stay length and season, discounts, your position.")
-    with c2.container(border=True, height="stretch"):
-        link("comp_set", "Comp set", ":material/holiday_village:")
-        st.caption("Map and list of competitors, and the amenities they offer.")
-    with c3.container(border=True, height="stretch"):
-        link("availability", "Availability", ":material/calendar_month:")
-        st.caption("How booked they are, minimum stays and recent activity.")
+    cards = [
+        ("advisor", "Pricing advisor", ":material/price_check:",
+         "What should I charge? A suggested rate from your closest comparables."),
+        ("prices", "Prices", ":material/payments:",
+         "Price ranges per stay length, long-stay discounts and seasonality."),
+        ("demand", "Demand", ":material/trending_up:",
+         "Which dates are filling up and which months are busy historically."),
+        ("comp_set", "Comp set", ":material/holiday_village:",
+         "Who the competitors are, and which amenities are worth more."),
+        ("positioning", "Positioning", ":material/scatter_plot:",
+         "Price versus quality: who is overpriced and who is good value."),
+        ("availability", "Availability", ":material/calendar_month:",
+         "How booked they are, minimum stays and monthly specialists."),
+    ]  # fmt: skip
+    for row in (cards[:3], cards[3:]):
+        for column, (name, label, icon, text) in zip(st.columns(3), row, strict=True):
+            with column.container(border=True, height="stretch"):
+                link(name, label, icon)
+                st.caption(text)

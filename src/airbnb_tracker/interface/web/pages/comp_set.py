@@ -5,10 +5,10 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from airbnb_tracker.interface.web import analytics
+from airbnb_tracker.interface.web.components import caveat, insight, nights_picker, section
 from airbnb_tracker.interface.web.guards import require_data, require_settings
 from airbnb_tracker.interface.web.theme import CORAL, MUTED
-
-_TOP_AMENITIES = 25
 
 
 def render() -> None:
@@ -34,7 +34,7 @@ def render() -> None:
     listings = _with_median_prices(listings, data.tables["pricing_snapshots"])
 
     _map(listings, settings.search.radius_km)
-    _amenities(data.analysed)
+    _amenities(data.listings, data.tables["pricing_snapshots"], settings.scraping.currency)
     _table(listings)
 
 
@@ -51,31 +51,19 @@ def _map(listings: pd.DataFrame, radius_km: float) -> None:
     st.caption(f"{len(points)} listings · search radius {radius_km:g} km")
 
 
-def _amenities(analysed: pd.DataFrame) -> None:
-    st.subheader("What competitors offer")
-    st.caption(
-        "Share of competitors listing each amenity. Popular amenities you lack are "
-        "the easiest improvements; rare ones you have are selling points."
+def _amenities(listings: pd.DataFrame, pricing: pd.DataFrame, currency: str) -> None:
+    section(
+        "Amenities and what they are worth",
+        "For amenities that usually move prices: how many competitors offer each, whether "
+        "you do, and the median nightly price of competitors with and without it.",
     )
-    if analysed.empty or analysed["amenities"].isna().all():
+    nights = nights_picker(pricing["nights"].unique(), key="amenity_nights",
+                           label="Compare prices for")  # fmt: skip
+    table = analytics.amenity_premium(listings, analytics.nightly_by_listing(pricing, nights))
+    if table.empty:
         st.caption("Amenities appear after the listing details are collected.")
         return
-    competitors = analysed[~analysed["is_mine"]]
-    mine = analysed[analysed["is_mine"]]
-    my_amenities = (
-        set(mine["amenities"].iloc[0]) if len(mine) and mine["amenities"].iloc[0] else set()
-    )
-    counts = competitors["amenities"].dropna().explode().value_counts()
-    total = competitors["amenities"].notna().sum()
-    table = pd.DataFrame(
-        {
-            "Amenity": counts.index,
-            "Competitors with it": (counts.to_numpy() / total * 100).round(0),
-            "You have it": ["✓" if a in my_amenities else "✗" for a in counts.index]
-            if my_amenities
-            else ["?"] * len(counts),
-        }
-    ).head(_TOP_AMENITIES)
+    amount = st.column_config.NumberColumn(format="localized")
     st.dataframe(
         table,
         hide_index=True,
@@ -83,8 +71,35 @@ def _amenities(analysed: pd.DataFrame) -> None:
         column_config={
             "Competitors with it": st.column_config.ProgressColumn(
                 format="%.0f%%", min_value=0, max_value=100
-            )
+            ),
+            "Median price with": amount,
+            "Median price without": amount,
+            "Price difference (same bedrooms)": st.column_config.NumberColumn(format="%+.0f%%"),
         },
+    )
+    priced = table.dropna(subset=["Price difference (same bedrooms)"])
+    priced = priced[priced["Confidence"] == "Good"]
+    missing = table[(table["You"] == "✗") & (table["Competitors with it"] >= 50)]
+    parts = []
+    if not priced.empty:
+        top = priced.iloc[0]
+        parts.append(
+            f"Compared with listings of the same size, those with "
+            f"**{top['Amenity'].lower()}** charge about "
+            f"**{top['Price difference (same bedrooms)']:+.0f}%** per night."
+        )
+    if not missing.empty:
+        parts.append(
+            "Most competitors offer **"
+            + ", ".join(missing["Amenity"].str.lower().head(4))
+            + "** and you do not: worth considering if you can add them."
+        )
+    if parts:
+        insight(" ".join(parts))
+    caveat(
+        "The difference compares listings with the same number of bedrooms, but it is still "
+        "an association, not a cause (they may also be newer or better located). It needs "
+        "at least 5 listings with and 5 without the amenity."
     )
 
 

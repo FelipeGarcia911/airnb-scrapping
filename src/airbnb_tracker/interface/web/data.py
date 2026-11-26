@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from airbnb_tracker.application.dto import ReportBundle
-from airbnb_tracker.application.use_cases import BuildReportQuery, ExportQuery
+from airbnb_tracker.application.use_cases import BuildReportQuery, ExportQuery, latest_run_stays
 from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.domain.value_objects import Money
 from airbnb_tracker.infrastructure.config import AppSettings, load_settings
@@ -76,7 +76,7 @@ def _load(config: str, db_version: float, my_price: float) -> MarketData:
     my_id = settings.my_listing.listing_id
     bundle = container.build_report.execute(
         BuildReportQuery(
-            stays=settings.stays.resolve(now.date()),
+            stays=latest_run_stays(container.repository) or settings.stays.resolve(now.date()),
             my_listing_id=my_id,
             my_nightly_price=(
                 Money(Decimal(str(my_price)), settings.scraping.currency) if my_price else None
