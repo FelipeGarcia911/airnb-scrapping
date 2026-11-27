@@ -493,11 +493,11 @@ def seasonal_prices(pricing: pd.DataFrame, comps: pd.DataFrame, nights: int,
             "Comparables priced": rows.groupby("check_in")["listing_id"].nunique(),
             "Comparables median": by_date.round(0),
             "Season factor": factor.round(2),
-            "Suggested nightly": (suggested * factor).round(0),
+            "Suggested nightly after discount": (suggested * factor).round(0),
         }
     )
     if nights >= MONTHLY_STAY_NIGHTS:
-        table["Suggested monthly"] = (table["Suggested nightly"] * 30).round(0)
+        table["Suggested monthly"] = (table["Suggested nightly after discount"] * 30).round(0)
     table.index.name = "Check-in"
     return table
 
@@ -542,3 +542,39 @@ def by_label(series: pd.Series) -> dict[object, float]:
 
 def _round(value: float) -> int | None:
     return None if pd.isna(value) else round(value)
+
+
+# --- pricing by check-in date (main pricing screen) ------------------------------------
+
+
+def benchmarks_by_check_in(
+    pricing: pd.DataFrame, comp_ids: set[str], nights: int, check_ins: list[str]
+) -> pd.DataFrame:
+    """Comparables' nightly price after discount for every check-in date searched.
+
+    Dates searched without any priced comparable stay in the table (as "no data") so the
+    admin sees the gap instead of a missing row.
+    """
+    latest = latest_pricing(pricing)
+    rows = latest[(latest["nights"] == nights) & latest["listing_id"].isin(comp_ids)]
+    grouped = rows.groupby("check_in")
+    table = pd.DataFrame(
+        {
+            "median": grouped["nightly_price"].median(),
+            "p25": grouped["nightly_price"].quantile(0.25),
+            "p75": grouped["nightly_price"].quantile(0.75),
+            "comparables": grouped["listing_id"].nunique(),
+            "captured": grouped["collected_at"].max(),
+        }
+    )
+    dates = sorted(set(check_ins) | set(table.index))
+    return table.reindex(dates).rename_axis("check_in").reset_index()
+
+
+def searched_check_ins(search_runs: pd.DataFrame, nights: int) -> list[str]:
+    """Check-in dates of the latest search run for one stay length."""
+    if search_runs.empty:
+        return []
+    latest_run = search_runs.sort_values("started_at")["run_id"].iloc[-1]
+    runs = search_runs[(search_runs["run_id"] == latest_run) & (search_runs["nights"] == nights)]
+    return sorted(runs["check_in"].unique())

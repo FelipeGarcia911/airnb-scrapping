@@ -20,7 +20,7 @@ from airbnb_tracker.interface.web.status import (
 
 def render() -> None:
     st.title("Collect data")
-    st.caption("Step 2 of 5")
+    st.caption("Data & settings")
     st.markdown(
         "Searches Airbnb with your settings and stores the results. Each update adds to the "
         "history, so running it every few days shows how prices and availability move."
@@ -102,7 +102,7 @@ def _start_controls(settings: AppSettings, runner: JobRunner, job: Job | None) -
                 st.rerun()
 
     if job is not None and job.succeeded:
-        next_step("overview", "Next: see the results")
+        next_step("price_setup", "Next: price & configure")
 
 
 def _log(job: Job | None) -> None:

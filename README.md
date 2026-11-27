@@ -144,26 +144,32 @@ Useful options:
 uv run airbnb-tracker ui        # opens http://localhost:8501
 ```
 
-A local web app (Streamlit) organised as five steps, like the comp-set dashboards of
-market tools: define your comp set, collect, analyse the market, price and plan, export.
+A local web app (Streamlit) organised around the admin's decision: **which base rate and
+discount to set, and what margin they leave**.
 
-| Step | Page | What it is for |
+| Section | Page | What it is for |
 |---|---|---|
-| **1 · Set up** | Set up my market | Your listing (centre the search on it from its link), area, comparable filters including the **kind of property** (apartments, houses, rural stays), stay lengths and comp set size. |
-| **2 · Collect** | Collect data | Starts the update (prices → listing details → export files) and follows it live, with partial updates and the log. |
-| **3 · Market analytics** | Market overview | Key numbers of your comp set, plain-language takeaways and links to every view. |
-| | Comp set | Map and list of competitors, and what price-moving amenities are worth (same bedrooms). |
-| | Prices | Price ranges per stay length, length-of-stay discount curve, each listing's ladder, seasonality. |
-| | Demand | Upcoming demand calendar with the busiest periods, and historical seasonality from reviews. |
-| | Availability | Nights not bookable, minimum stays, short-stay vs monthly competitors. |
-| | Positioning | Value map: price versus rating with quadrants and where you fit. |
-| | Data quality | Price outliers left out (with the reason), price distribution per segment, deep discounts kept. |
-| **4 · Pricing & finances** | Pricing advisor | Suggested (re)opening rate from your closest comparables, every factor shown, a percentile slider with markers, the rate per check-in date, and why it differs from the market. |
-| | Earnings calculator | Airbnb's fees and taxes, your costs, a typical month's profit, break-even price, reverse mode and the settings to enter in Airbnb. |
-| **5 · Export** | Export | Download every table as CSV or write them all to the exports folder. |
+| **Pricing** (home) | Price & configure | One row per check-in date: your nightly price after discount vs the comparables' median and P25–P75, gap, number of comparables and capture date ("No data" when a stay length was not quoted). Select a date to simulate **current**, **aligned with the median** and the **floor for a minimum margin**, keeping either your base rate or your discount fixed. Ends with an *actual → proposed* sheet to enter in Airbnb and the quote to verify before applying. |
+| | Pricing advisor | Suggested rate from your closest comparables with every factor shown, the base rate to publish for it, a percentile slider and the rate per check-in date. |
+| | Earnings calculator | Airbnb's fees and taxes, your costs, paid nights per 30-day month, monthly profit, break-even and reverse pricing. Saves the fees and costs every pricing page uses. |
+| **Market analytics** | Market overview | Key numbers of your comp set and plain-language takeaways. |
+| | Comparables & amenities | Map and list of competitors, and what price-moving amenities are worth. |
+| | Prices | Price ranges per stay length, length-of-stay discounts, seasonality. |
+| | Observed availability | Competitors' calendars (descriptive only: not bookable ≠ booked), minimum stays, short-stay vs monthly competitors, past activity from reviews. |
+| | Positioning | Price versus rating value map. |
+| **Data & settings** | Set up my market | Your listing (location and kind of property read from its link), your current pricing on Airbnb, the search area, filters, stay lengths and comp set size. |
+| | Collect data | Start an update and follow it live; partial updates and the log. |
+| | Data quality | Outlier switches (apply to every page), excluded listings, price distribution, deep discounts. |
+| | Export | Download every table or write them to the exports folder. |
 
-The sidebar shows update progress and the analysis switches: exclude price outliers and the
-outlier sensitivity (lenient, balanced, strict).
+**One name per amount** on every screen: *base nightly rate* (what you publish), *nightly
+after discount* (what competitors are compared on), *accommodation after discount*,
+*estimated guest total* (plus cleaning) and *estimated host payout* (after Airbnb's fee and
+its VAT). The financial scenario assumes a 30-day month with a configurable number of paid
+nights (20 by default), since long stays leave gaps between guests.
+
+The sidebar shows the last update, whether the latest search was complete or partial, and
+the progress of a running update.
 
 Every dashboard follows the same pattern: what it shows, the chart or table, *how to read
 it*, a plain-language takeaway computed from your data, and its caveats. Results always use

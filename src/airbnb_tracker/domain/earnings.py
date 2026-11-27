@@ -214,3 +214,89 @@ def _with_price(template: StayPricing, price: float) -> StayPricing:
         monthly_discount_pct=template.monthly_discount_pct,
         cleaning_fee=template.cleaning_fee,
     )
+
+
+# --- base rate vs effective rate -----------------------------------------------------
+#
+# Competitor prices are captured *effective*: the stay total after their discounts,
+# divided by the nights. What you publish on Airbnb is the *base* rate, before your
+# discount. Comparing or handing over one as the other double-counts the discount.
+
+
+def base_for_effective(effective_nightly: float, discount_pct: float) -> float:
+    """Base rate to publish so that, after ``discount_pct``, the nightly price is the target."""
+    if not 0 <= discount_pct < 100:
+        raise InvalidValueError("discount_pct must be between 0 and 100")
+    return effective_nightly / (1 - discount_pct / 100)
+
+
+def discount_for_effective(base_nightly: float, effective_nightly: float) -> float:
+    """Discount that turns ``base_nightly`` into ``effective_nightly`` (0 if none needed)."""
+    if base_nightly <= 0:
+        raise InvalidValueError("base_nightly must be positive")
+    return min(max((1 - effective_nightly / base_nightly) * 100, 0.0), 99.0)
+
+
+# --- margins with paid nights ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class StayEconomics:
+    """One stay and the month around it, with ``paid_nights`` actually paid out of 30.
+
+    With a 30-night minimum, gaps between guests usually leave some nights unpaid, so a
+    month is *committed* to 30 nights but pays fewer.
+    """
+
+    booking: BookingBreakdown
+    month: MonthlyProjection
+    paid_nights: float
+    stay_costs: float  # per-booking costs plus the stay's share of fixed costs
+
+    @property
+    def margin_per_stay(self) -> float:
+        return self.booking.payout_after_vat - self.stay_costs
+
+    @property
+    def margin_per_committed_night(self) -> float:
+        return self.month.net_profit / DAYS_PER_MONTH
+
+    @property
+    def margin_pct(self) -> float:
+        return self.month.margin_pct
+
+
+def stay_economics(
+    pricing: StayPricing, policy: FeePolicy, costs: OperatingCosts, paid_nights: float
+) -> StayEconomics:
+    if not 0 < paid_nights <= DAYS_PER_MONTH:
+        raise InvalidValueError("paid_nights must be between 1 and 30")
+    month = project_month(pricing, policy, costs, paid_nights / DAYS_PER_MONTH * 100)
+    stays_per_month = paid_nights / pricing.nights
+    stay_costs = costs.per_booking_total + costs.fixed_total / stays_per_month
+    return StayEconomics(quote_booking(pricing, policy), month, paid_nights, stay_costs)
+
+
+def base_for_margin(
+    target_margin_pct: float,
+    template: StayPricing,
+    policy: FeePolicy,
+    costs: OperatingCosts,
+    paid_nights: float,
+) -> float | None:
+    """Base rate whose month reaches ``target_margin_pct`` (net profit / guest payments).
+
+    Profit and guest payments are both linear in the base rate, so the margin equation
+    has a closed-form solution from two evaluations.
+    """
+
+    def totals(price: float) -> tuple[float, float]:
+        month = stay_economics(_with_price(template, price), policy, costs, paid_nights).month
+        return month.net_profit, month.guest_payments
+
+    (profit0, guest0), (profit1, guest1) = totals(0.0), totals(1.0)
+    margin = target_margin_pct / 100
+    slope = (profit1 - profit0) - margin * (guest1 - guest0)
+    if slope <= 0:
+        return None
+    return max((margin * guest0 - profit0) / slope, 0.0)

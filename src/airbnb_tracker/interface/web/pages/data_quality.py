@@ -9,6 +9,7 @@ import streamlit as st
 from airbnb_tracker.domain.outliers import OutlierFlag, OutlierPolicy
 from airbnb_tracker.interface.web import analytics
 from airbnb_tracker.interface.web.components import caveat, how_to_read, insight, section
+from airbnb_tracker.interface.web.data import analysis_controls
 from airbnb_tracker.interface.web.formatting import format_money
 from airbnb_tracker.interface.web.guards import require_data, require_settings
 from airbnb_tracker.interface.web.theme import CORAL, MUTED
@@ -18,7 +19,7 @@ DEEP_DISCOUNT_PCT = 40
 
 def render() -> None:
     st.title("Data quality")
-    st.caption("Step 3 of 5 · Market analytics")
+    st.caption("Data & settings")
     st.markdown(
         "Some listings show prices nobody would pay (a host blocking dates with a huge "
         "price, a long-term rental) and a few sit far outside their segment. They are "
@@ -27,6 +28,9 @@ def render() -> None:
     settings = require_settings()
     if settings is None:
         return
+    with st.container(border=True):
+        st.markdown("**Analysis settings** · apply to every page")
+        analysis_controls(settings)
     data = require_data(settings)
     if data is None:
         return

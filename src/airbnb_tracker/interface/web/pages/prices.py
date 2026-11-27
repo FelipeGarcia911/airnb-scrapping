@@ -21,10 +21,11 @@ _POSITION = {"below_market": "Below market", "competitive": "Competitive", "prem
 
 def render() -> None:
     st.title("Prices")
-    st.caption("Step 3 of 5 · Market analytics")
+    st.caption("Market analytics")
     st.markdown(
-        "What comparable stays charge **per night**, for each stay length you track. "
-        "Prices are after Airbnb's discounts and before cleaning fee and taxes."
+        "What comparable stays charge **per night after discount**, for each stay length you "
+        "track: the stay total after their discounts, divided by the nights, before cleaning "
+        "fee, Airbnb's fees and taxes."
     )
     settings = require_settings()
     if settings is None:

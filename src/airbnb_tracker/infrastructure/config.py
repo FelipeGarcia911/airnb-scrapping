@@ -32,8 +32,22 @@ class ConfigurationError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class MyListingSettings:
+    """Your listing and how it is currently configured on Airbnb."""
+
     listing_id: ListingId | None = None
-    nightly_price: Decimal | None = None
+    nightly_price: Decimal | None = None  # base nightly rate, before discounts
+    weekly_discount_pct: float = 0.0
+    monthly_discount_pct: float = 0.0
+    cleaning_fee: Decimal | None = None
+    min_nights: int | None = None
+
+    def discount_for(self, nights: int) -> float:
+        """Airbnb applies the monthly discount from 28 nights and the weekly one from 7."""
+        if nights >= 28:
+            return self.monthly_discount_pct
+        if nights >= 7:
+            return self.weekly_discount_pct
+        return 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +185,10 @@ def _parse_my_listing(raw: Mapping[str, Any]) -> MyListingSettings:
     return MyListingSettings(
         listing_id=ListingId(str(raw["id"])) if raw.get("id") else None,
         nightly_price=_opt(Decimal, raw.get("nightly_price")),
+        weekly_discount_pct=float(raw.get("weekly_discount_pct") or 0),
+        monthly_discount_pct=float(raw.get("monthly_discount_pct") or 0),
+        cleaning_fee=_opt(Decimal, raw.get("cleaning_fee")),
+        min_nights=_opt(int, raw.get("min_nights")),
     )
 
 

@@ -9,6 +9,7 @@ from airbnb_tracker.application.dto import DurationReport
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import settings_or_none
 from airbnb_tracker.interface.web.data import MarketData, load_market, money, my_price_input
+from airbnb_tracker.interface.web.glossary import NIGHTLY_AFTER_DISCOUNT
 from airbnb_tracker.interface.web.guards import outlier_notice
 from airbnb_tracker.interface.web.navigation import link, next_step
 from airbnb_tracker.interface.web.status import run_estimate
@@ -23,7 +24,7 @@ MONTHLY_SPECIALIST_NIGHTS = 20
 
 def render() -> None:
     st.title("Market overview")
-    st.caption("Step 3 of 5 · Market analytics")
+    st.caption("Market analytics")
     settings = settings_or_none()
     if settings is None:
         _welcome()
@@ -41,7 +42,7 @@ def render() -> None:
     _kpis(settings, data, focus)
     _takeaways(settings, data, focus, price)
     _explore()
-    next_step("advisor", "Next: price your listing")
+    next_step("price_setup", "Next: price & configure")
 
 
 def _welcome() -> None:
@@ -72,7 +73,7 @@ def _waiting_for_data(settings: AppSettings) -> None:
         f"(≈ {run.total_minutes:.0f} min); this page fills in when it finishes.",
         icon=":material/sync:",
     )
-    next_step("collect", "Go to step 2: collect data")
+    next_step("collect", "Collect data")
 
 
 def _comp_set_description(settings: AppSettings) -> str:
@@ -107,7 +108,7 @@ def _kpis(settings: AppSettings, data: MarketData, focus: DurationReport) -> Non
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Comp set", len(competitors), help="Competitors with full details")
     c2.metric(
-        f"Typical price · {focus.nights} nights",
+        f"Typical {NIGHTLY_AFTER_DISCOUNT.lower()} · {focus.nights} nights",
         money(float(dist.median.amount), currency) if dist else "—",
         help="Median nightly price of the comp set",
     )
@@ -195,20 +196,18 @@ def _monthly_specialists(analysed: pd.DataFrame) -> int:
 def _explore() -> None:
     groups = [
         ("Market analytics", [
-            ("comp_set", "Comp set", ":material/holiday_village:",
+            ("comp_set", "Comparables & amenities", ":material/holiday_village:",
              "Who your competitors are and which amenities are worth more."),
             ("prices", "Prices", ":material/payments:",
              "What they charge per stay length, long-stay discounts and seasonality."),
-            ("demand", "Demand", ":material/trending_up:",
-             "Which dates are filling up and which months are busy historically."),
-            ("availability", "Availability", ":material/calendar_month:",
-             "How booked they are, minimum stays and monthly specialists."),
+            ("availability", "Observed availability", ":material/calendar_month:",
+             "Competitors' calendars, minimum stays and past activity from reviews."),
             ("positioning", "Positioning", ":material/scatter_plot:",
              "Price versus quality: who is overpriced and who is good value."),
-            ("quality", "Data quality", ":material/rule:",
-             "Which prices were left out as outliers, and why."),
         ]),
-        ("Pricing & finances", [
+        ("Pricing", [
+            ("price_setup", "Price & configure", ":material/tune:",
+             "Your price by check-in date, a simulator and the values to enter in Airbnb."),
             ("advisor", "Pricing advisor", ":material/price_check:",
              "What to charge: a suggested rate and any percentile you choose."),
             ("earnings", "Earnings calculator", ":material/calculate:",

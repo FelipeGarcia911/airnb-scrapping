@@ -30,7 +30,7 @@ def require_data(settings: AppSettings, my_price: float | None = None) -> Market
             "prices, reads competitor details and keeps the history.",
             icon=":material/sync:",
         )
-        next_step("collect", "Go to step 2: collect data")
+        next_step("collect", "Collect data")
         return None
     outlier_notice(data)
     return data
@@ -44,7 +44,7 @@ def outlier_notice(data: MarketData) -> None:
     if data.bundle.outliers_excluded:
         st.caption(
             f":material/filter_alt: {count} {plural} with outlier prices left out of these "
-            "numbers (see **Data quality**; switch in the sidebar)."
+            "numbers (see **Data quality**)."
         )
     else:
         st.caption(

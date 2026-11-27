@@ -24,6 +24,7 @@ from airbnb_tracker.infrastructure.exporters.dataset import (
     review_rows,
     search_run_rows,
 )
+from airbnb_tracker.infrastructure.persistence import SqliteRepository
 from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.formatting import format_money, money_input
 
@@ -88,26 +89,46 @@ def outlier_sensitivity(settings: AppSettings | None = None) -> OutlierSensitivi
 
 
 def analysis_controls(settings: AppSettings | None) -> None:
-    """Global analysis switches, shown in the sidebar: they apply to every results page."""
-    st.session_state.setdefault(EXCLUDE_OUTLIERS_KEY, excluding_outliers(settings))
-    st.session_state.setdefault(SENSITIVITY_KEY, outlier_sensitivity(settings).value)
-    st.toggle(
+    """Outlier switches. The chosen values are kept outside the widgets, so they still
+    apply on every other page (Streamlit forgets widget state when you leave a page)."""
+
+    def remember(widget_key: str, key: str) -> None:
+        st.session_state[key] = st.session_state[widget_key]
+
+    exclude = st.toggle(
         "Exclude price outliers",
-        key=EXCLUDE_OUTLIERS_KEY,
+        value=excluding_outliers(settings),
+        key="_w_exclude_outliers",
+        on_change=remember,
+        args=("_w_exclude_outliers", EXCLUDE_OUTLIERS_KEY),
         help="Leaves implausible or far-off prices out of every statistic. They stay in the "
-        "downloads. See Data quality.",
+        "downloads.",
     )
     st.segmented_control(
         "Outlier sensitivity",
         [s.value for s in OutlierSensitivity],
-        key=SENSITIVITY_KEY,
+        default=outlier_sensitivity(settings).value,
+        key="_w_outlier_sensitivity",
+        on_change=remember,
+        args=("_w_outlier_sensitivity", SENSITIVITY_KEY),
         format_func=str.capitalize,
-        disabled=not st.session_state[EXCLUDE_OUTLIERS_KEY],
+        disabled=not exclude,
         help="\n".join(f"- {s.label}" for s in OutlierSensitivity),
     )
-    if settings and settings.search.comp_set_groups:
-        names = ", ".join(sorted(g.value for g in settings.search.comp_set_groups))
-        st.caption(f"Comparing with: {names} (change in step 1).")
+
+
+@st.cache_data(show_spinner=False)
+def sample_status(database: str, db_version: float) -> tuple[int, int, int]:
+    """(searches, failed, truncated) of the latest search run."""
+    del db_version  # cache key only
+    runs = SqliteRepository(database).all_runs()
+    if not runs:
+        return 0, 0, 0
+    latest = max(runs, key=lambda run: run.started_at).run_id
+    current = [run for run in runs if run.run_id == latest]
+    failed = sum(1 for run in current if run.error)
+    truncated = sum(1 for run in current if run.truncated)
+    return len(current), failed, truncated
 
 
 def load_market(settings: AppSettings, my_price: float | None) -> MarketData | None:

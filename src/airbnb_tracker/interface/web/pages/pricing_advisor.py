@@ -6,6 +6,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from airbnb_tracker.domain.earnings import base_for_effective
 from airbnb_tracker.interface.web import analytics
 from airbnb_tracker.interface.web.components import (
     caveat,
@@ -14,10 +15,14 @@ from airbnb_tracker.interface.web.components import (
     nights_picker,
     section,
 )
-from airbnb_tracker.interface.web.formatting import forget_money_input, format_money
+from airbnb_tracker.interface.web.formatting import format_money
+from airbnb_tracker.interface.web.glossary import BASE_RATE, NIGHTLY_AFTER_DISCOUNT, glossary
 from airbnb_tracker.interface.web.guards import require_data, require_settings
 from airbnb_tracker.interface.web.navigation import go_to
-from airbnb_tracker.interface.web.pages.earnings import CALCULATOR_NIGHTS, CALCULATOR_PRICE
+from airbnb_tracker.interface.web.pages.earnings import (
+    CALCULATOR_NIGHTS,
+    PENDING_NIGHTLY_AFTER_DISCOUNT,
+)
 from airbnb_tracker.interface.web.theme import CORAL, INK, MUTED
 
 _GO_TO_CALCULATOR = "_go_to_calculator"
@@ -26,12 +31,13 @@ _EFFECT = {1: "▲ raises", 0: "— neutral", -1: "▼ lowers"}
 
 def render() -> None:
     st.title("Pricing advisor")
-    st.caption("Step 4 of 5 · Pricing & finances")
+    st.caption("Pricing")
     st.markdown(
         "A suggested nightly rate for **your** listing, based on the competitors most like "
         "it, then nudged by what makes yours stronger or weaker. Use it as a starting point "
         "for reopening or repricing, not as an automatic price."
     )
+    glossary()
     settings = require_settings()
     if settings is None:
         return
@@ -81,7 +87,7 @@ def render() -> None:
         )
         return
 
-    _headline(advice, currency)
+    _headline(advice, currency, settings.my_listing.discount_for(nights))
     _context(advice, nightly, currency)
     _percentile_explorer(advice, currency)
     _signals(advice)
@@ -110,17 +116,23 @@ def _context(advice: analytics.PriceAdvice, nightly: pd.Series, currency: str) -
         )
 
 
-def _headline(advice: analytics.PriceAdvice, currency: str) -> None:
+def _headline(advice: analytics.PriceAdvice, currency: str, my_discount: float) -> None:
     section(
         "Suggested rate",
         f"From {len(advice.comparables)} comparables, {advice.nights}-night stays.",
     )
+    base = base_for_effective(advice.suggested, my_discount)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Suggested nightly", format_money(advice.suggested, currency),
-              help=f"Percentile {advice.target_percentile} of comparables")  # fmt: skip
+    c1.metric(
+        f"Suggested {NIGHTLY_AFTER_DISCOUNT.lower()}",
+        format_money(advice.suggested, currency),
+        help=f"Percentile {advice.target_percentile} of comparables",
+    )
     c2.metric(
-        "Suggested monthly" if advice.monthly else "Comparables median",
-        format_money(advice.monthly or advice.median, currency),
+        BASE_RATE,
+        format_money(base, currency),
+        help=f"What to publish so that your {my_discount:g}% discount for {advice.nights}-night "
+        "stays brings it to the suggested price (set your discounts in Set up my market).",
     )
     c3.metric(
         "Competitive range",
@@ -132,11 +144,14 @@ def _headline(advice: analytics.PriceAdvice, currency: str) -> None:
         else "lower half" if advice.target_percentile < 50 else "middle"
     )  # fmt: skip
     insight(
-        f"Price around **{format_money(advice.suggested, currency)}** per night "
+        f"Aim for **{format_money(advice.suggested, currency)}** "
+        f"{NIGHTLY_AFTER_DISCOUNT.lower()} "
         + (f"(≈ **{format_money(advice.monthly, currency)}** per month) " if advice.monthly else "")
         + f"to sit in the **{position}** of your comparables (percentile "
         f"{advice.target_percentile}). Staying between {format_money(advice.p25, currency)} "
-        f"and {format_money(advice.p75, currency)} keeps you competitive."
+        f"and {format_money(advice.p75, currency)} keeps you competitive. With your "
+        f"{my_discount:g}% discount, publish a {BASE_RATE.lower()} of "
+        f"**{format_money(base, currency)}**."
     )
 
 
@@ -159,7 +174,7 @@ def _percentile_explorer(advice: analytics.PriceAdvice, currency: str) -> None:
     price = float(prices.quantile(chosen / 100))
     cheaper = int((prices < price).sum())
     c1, c2, c3 = st.columns(3)
-    c1.metric(f"Nightly price at P{chosen}", format_money(price, currency),
+    c1.metric(f"{NIGHTLY_AFTER_DISCOUNT} at P{chosen}", format_money(price, currency),
               delta=f"{(price / advice.suggested - 1) * 100:+.0f}% vs suggested",
               delta_color="off")  # fmt: skip
     if advice.nights >= analytics.MONTHLY_STAY_NIGHTS:
@@ -232,8 +247,9 @@ def _position_chart(
 
 
 def _send_to_calculator(price: int, nights: int) -> None:
-    st.session_state[CALCULATOR_PRICE] = price
-    forget_money_input(CALCULATOR_PRICE)  # the formatted text is rebuilt from the new price
+    # Comparables are priced after their discounts: the calculator converts this into
+    # the base rate to publish, using your own discount for that stay length.
+    st.session_state[PENDING_NIGHTLY_AFTER_DISCOUNT] = price
     st.session_state[CALCULATOR_NIGHTS] = nights
     st.session_state[_GO_TO_CALCULATOR] = True
 
@@ -275,7 +291,7 @@ def _seasonal(pricing: pd.DataFrame, advice: analytics.PriceAdvice, currency: st
                 help="Comparables still available, and so priced, for that check-in."
             ),
             "Comparables median": amount,
-            "Suggested nightly": amount,
+            f"Suggested {NIGHTLY_AFTER_DISCOUNT.lower()}": amount,
             "Suggested monthly": amount,
         },
     )

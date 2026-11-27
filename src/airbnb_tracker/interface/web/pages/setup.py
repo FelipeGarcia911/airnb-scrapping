@@ -45,9 +45,7 @@ def render() -> None:
     _init_state(base)
 
     st.title("Set up my market")
-    st.caption(
-        "Step 1 of 5 · then collect data, analyse the market, price your listing and export."
-    )
+    st.caption("Data & settings · start here, then collect data")
     st.markdown(
         "Tell the tracker **which listing is yours** and **what counts as a competitor**. "
         "Like a *comp set* in market tools, only comparable stays near yours are analysed. "
@@ -66,32 +64,39 @@ def _step_property() -> None:
     with st.container(border=True):
         st.subheader("1 · Your property")
         st.caption(
-            "Paste your listing so it is included in every analysis and the search can be "
-            "centred on it."
+            "Paste your listing and read it from Airbnb: its location centres the search. "
+            "Then enter the pricing you use on Airbnb: it is the starting point of every "
+            "simulation."
         )
-        left, right = st.columns([3, 1])
-        left.text_input(
+        st.text_input(
             "Your Airbnb link or listing ID",
             key=_key("listing_id"),
             placeholder="https://www.airbnb.com/rooms/123456789",
             help="Open your listing on airbnb.com and copy the address bar. The number after "
             "/rooms/ is enough.",
         )
-        with right:
-            money_input(
-                "Your nightly price",
-                key=_key("nightly_price"),
-                currency=_currency(),
-                help="What you charge (or plan to charge) per night. Used to show your "
-                "position. Leave empty if not set.",
-            )
         st.button(
-            "Centre the search on my listing",
-            icon=":material/my_location:",
-            help="Reads your listing's location from Airbnb and uses it as the search centre.",
-            on_click=_locate_listing,  # callbacks run before widgets, so they may update them
+            "Read my listing from Airbnb",
+            icon=":material/download:",
+            help="Reads your listing's location (to centre the search) and kind of property "
+            "(to compare like with like).",
+            on_click=_read_listing,  # callbacks run before widgets, so they may update them
         )
         _show_locate_feedback()
+
+        st.markdown("**Your pricing on Airbnb**")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            money_input("Base nightly rate", key=_key("nightly_price"), currency=_currency(),
+                        help="The nightly price you publish, before discounts.")  # fmt: skip
+        c2.number_input("Weekly discount %", 0, 99, key=_key("weekly_discount_pct"),
+                        help="Applies from 7 nights.")  # fmt: skip
+        c3.number_input("Monthly discount %", 0, 99, key=_key("monthly_discount_pct"),
+                        help="Applies from 28 nights.")  # fmt: skip
+        with c4:
+            money_input("Cleaning fee", key=_key("cleaning_fee"), currency=_currency())
+        c5.number_input("Minimum stay (nights)", 0, 365, key=_key("min_nights"),
+                        help="0 = not set.")  # fmt: skip
 
 
 def _step_area() -> None:
@@ -264,7 +269,7 @@ def _summary_and_save(raw: dict[str, Any], path: Path) -> None:
             st.rerun()
 
 
-def _locate_listing() -> None:
+def _read_listing() -> None:
     """Button callback: runs before the widgets are drawn, so it may change their values."""
     listing_id = parse_listing_id(st.session_state[_key("listing_id")] or "")
     if not listing_id:
@@ -275,21 +280,19 @@ def _locate_listing() -> None:
     except GatewayError as error:
         _set_feedback("error", f"Could not read the listing: {error}")
         return
-    location = details.listing.location
-    if location is None:
-        _set_feedback("warning", "The listing has no public location.")
-        return
     st.session_state[_key("listing_id")] = listing_id
-    st.session_state[_key("latitude")] = location.latitude
-    st.session_state[_key("longitude")] = location.longitude
-    st.session_state[_key("use_url")] = False
+    messages = []
+    location = details.listing.location
+    if location is not None:
+        st.session_state[_key("latitude")] = location.latitude
+        st.session_state[_key("longitude")] = location.longitude
+        st.session_state[_key("use_url")] = False
+        messages.append("search centred on it")
     group = property_group(details.listing.property_type)
     if group is not PropertyGroup.OTHER:
         st.session_state[_key("property_groups")] = [group.value]
-    _set_feedback(
-        "success",
-        f"Search centred on “{details.listing.name}”; comparing with {group.value}s.",
-    )
+        messages.append(f"comparing with {group.value}s")
+    _set_feedback("success", f"“{details.listing.name}”: " + "; ".join(messages) + ".")
 
 
 def _set_feedback(kind: str, message: str) -> None:

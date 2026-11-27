@@ -24,7 +24,7 @@ _TABLES = {
 
 def render() -> None:
     st.title("Export")
-    st.caption("Step 5 of 5")
+    st.caption("Data & settings")
     st.markdown(
         "Everything collected so far, ready for Excel, Google Sheets or pandas. "
         "Data is never overwritten: each update adds to the history."
@@ -36,7 +36,7 @@ def render() -> None:
     data = load_market(settings, None)
     if data is None:
         st.info("Nothing to export yet: collect data in step 2 first.", icon=":material/sync:")
-        next_step("collect", "Go to step 2: collect data")
+        next_step("collect", "Collect data")
         return
 
     for name, description in _TABLES.items():

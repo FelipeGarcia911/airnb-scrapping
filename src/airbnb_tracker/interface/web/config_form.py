@@ -13,9 +13,9 @@ from typing import Any
 ROOM_TYPES = {"Entire place": "entire_place", "Private room": "private_room", "Any": None}
 DURATION_CHOICES = (7, 14, 20, 28, 30, 60, 90)
 # Optional numbers: the form shows 0 for "no limit", the config stores null.
-OPTIONAL_NUMBERS = ("min_bedrooms", "max_bedrooms", "min_bathrooms", "min_beds")
+OPTIONAL_NUMBERS = ("min_bedrooms", "max_bedrooms", "min_bathrooms", "min_beds", "min_nights")
 # Money amounts: whole numbers typed with thousands separators; empty = not set.
-MONEY_FIELDS = ("nightly_price", "price_min", "price_max")  # fmt: skip
+MONEY_FIELDS = ("nightly_price", "cleaning_fee", "price_min", "price_max")  # fmt: skip
 _LISTING_ID = re.compile(r"(?:/rooms/)?(\d{5,25})")
 
 
@@ -24,7 +24,11 @@ class FormValues:
     """Everything the setup form edits, with UI-friendly types."""
 
     listing_id: str = ""
-    nightly_price: int | None = None
+    nightly_price: int | None = None  # base rate you publish, before discounts
+    weekly_discount_pct: int = 0
+    monthly_discount_pct: int = 0
+    cleaning_fee: int | None = None
+    min_nights: int | None = None
     use_url: bool = False
     latitude: float = 4.8133
     longitude: float = -75.6961
@@ -69,6 +73,10 @@ def from_raw(raw: dict[str, Any]) -> FormValues:
     return FormValues(
         listing_id=str(mine.get("id") or ""),
         nightly_price=_opt_int(mine.get("nightly_price")),
+        weekly_discount_pct=round(float(mine.get("weekly_discount_pct") or 0)),
+        monthly_discount_pct=round(float(mine.get("monthly_discount_pct") or 0)),
+        cleaning_fee=_opt_int(mine.get("cleaning_fee")),
+        min_nights=_opt_int(mine.get("min_nights")),
         use_url=bool(search.get("url")),
         latitude=float(search.get("latitude", defaults.latitude)),
         longitude=float(search.get("longitude", defaults.longitude)),
@@ -103,6 +111,10 @@ def to_raw(values: FormValues, base: dict[str, Any]) -> dict[str, Any]:
     mine = raw.setdefault("my_listing", {})
     mine["id"] = parse_listing_id(values.listing_id) if values.listing_id else None
     mine["nightly_price"] = values.nightly_price or None
+    mine["weekly_discount_pct"] = values.weekly_discount_pct
+    mine["monthly_discount_pct"] = values.monthly_discount_pct
+    mine["cleaning_fee"] = values.cleaning_fee
+    mine["min_nights"] = values.min_nights
 
     search = raw.setdefault("search", {})
     search.update(

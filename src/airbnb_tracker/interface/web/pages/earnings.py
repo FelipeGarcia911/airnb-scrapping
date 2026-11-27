@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from airbnb_tracker.domain.earnings import (
+    DAYS_PER_MONTH,
     MONTHLY_FROM_NIGHTS,
     WEEKLY_FROM_NIGHTS,
     BookingBreakdown,
@@ -17,6 +18,7 @@ from airbnb_tracker.domain.earnings import (
     MonthlyProjection,
     OperatingCosts,
     StayPricing,
+    base_for_effective,
     break_even_nightly_price,
     nightly_price_for_payout,
     project_month,
@@ -24,17 +26,25 @@ from airbnb_tracker.domain.earnings import (
 )
 from airbnb_tracker.domain.exceptions import InvalidValueError
 from airbnb_tracker.infrastructure.config import AppSettings, read_raw_config, save_raw_config
+from airbnb_tracker.interface.web import finance_settings
 from airbnb_tracker.interface.web.components import caveat, how_to_read, insight, section
 from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.data import MarketData, load_market
-from airbnb_tracker.interface.web.formatting import format_money, money_input
+from airbnb_tracker.interface.web.formatting import forget_money_input, format_money, money_input
+from airbnb_tracker.interface.web.glossary import (
+    BASE_RATE,
+    GUEST_TOTAL,
+    HOST_PAYOUT,
+    NIGHTLY_AFTER_DISCOUNT,
+    glossary,
+)
 from airbnb_tracker.interface.web.guards import require_settings
-from airbnb_tracker.interface.web.navigation import next_step
 from airbnb_tracker.interface.web.theme import CORAL, INK
 
 CALCULATOR_PRICE = "_calc_nightly_price"
 CALCULATOR_NIGHTS = "_calc_nights"
-_RAW_SECTION = "calculator"  # UI-only section of config.yaml with your saved costs
+# Prices handed over from the advisor are *after discount*: converted to a base rate here.
+PENDING_NIGHTLY_AFTER_DISCOUNT = "_calc_pending_after_discount"
 _STAY_CHOICES = (1, 3, 7, 14, 20, 30, 60, 90)
 
 DEFAULT_FIXED = {
@@ -70,7 +80,7 @@ _FEE_SOURCES = (
 
 def render() -> None:
     st.title("Earnings calculator")
-    st.caption("Step 4 of 5 · Pricing & finances")
+    st.caption("Pricing")
     st.markdown(
         "Set a price and see **what you really earn**: Airbnb's fees, taxes and your costs. "
         "It also tells you **what to enter in Airbnb** (price, discounts, cleaning fee)."
@@ -78,8 +88,9 @@ def render() -> None:
     settings = require_settings()
     if settings is None:
         return
+    glossary()
     currency = settings.scraping.currency
-    saved = _saved_inputs()
+    saved = finance_settings.saved_inputs()
     market = load_market(settings, None)
 
     policy = _fees_section(saved)
@@ -89,14 +100,14 @@ def render() -> None:
     booking = quote_booking(pricing, policy)
     _booking_result(booking, currency)
 
-    costs, occupancy = _costs_section(saved, currency, market)
+    costs, paid_nights = _costs_section(saved, currency)
+    occupancy = paid_nights / DAYS_PER_MONTH * 100
     month = project_month(pricing, policy, costs, occupancy)
     _month_result(
         month, pricing=pricing, policy=policy, costs=costs, currency=currency, market=market
     )
     _airbnb_setup(pricing, currency)
-    _save_defaults(pricing, policy, costs, occupancy)
-    next_step("export", "Next: export the data")
+    _save_defaults(pricing, policy, costs, paid_nights)
 
 
 # --- inputs --------------------------------------------------------------------------
@@ -106,6 +117,7 @@ def _pricing_section(
     settings: AppSettings, saved: dict[str, Any], market: MarketData | None, policy: FeePolicy
 ) -> StayPricing | None:
     currency = settings.scraping.currency
+    mine = settings.my_listing
     weekly_typical, monthly_typical = _market_discounts(market)
     with st.container(border=True):
         st.subheader("1 · Your Airbnb pricing")
@@ -127,20 +139,20 @@ def _pricing_section(
                 "Cleaning fee per stay",
                 key="_calc_cleaning",
                 currency=currency,
-                default=saved.get("cleaning_fee"),
+                default=round(mine.cleaning_fee) if mine.cleaning_fee else None,
             )
         weekly = c3.number_input(
             "Weekly discount %",
             0,
             99,
-            int(saved.get("weekly_discount_pct", weekly_typical or 0)),
+            round(mine.weekly_discount_pct or weekly_typical or 0),
             help=f"From {WEEKLY_FROM_NIGHTS} nights. Market typical: {_pct(weekly_typical)}.",
         )
         monthly = c4.number_input(
             "Monthly discount %",
             0,
             99,
-            int(saved.get("monthly_discount_pct", monthly_typical or 0)),
+            round(mine.monthly_discount_pct or monthly_typical or 0),
             help=f"From {MONTHLY_FROM_NIGHTS} nights. Market typical: {_pct(monthly_typical)}.",
         )
         if weekly_typical or monthly_typical:
@@ -171,15 +183,25 @@ def _pricing_section(
                 "discounts, Airbnb's fee and taxes."
             )
         else:
-            default_price = saved.get("nightly_price") or _my_price(settings)
+            handed_over = st.session_state.pop(PENDING_NIGHTLY_AFTER_DISCOUNT, None)
+            if handed_over is not None:
+                base = base_for_effective(float(handed_over), template.discount_pct)
+                st.session_state[CALCULATOR_PRICE] = round(base)
+                forget_money_input(CALCULATOR_PRICE)
+                st.caption(
+                    f"From the advisor: {format_money(handed_over, currency)} "
+                    f"{NIGHTLY_AFTER_DISCOUNT.lower()} → {BASE_RATE.lower()} "
+                    f"{format_money(base, currency)} with your {template.discount_pct:g}% discount."
+                )
+            default_price = round(mine.nightly_price) if mine.nightly_price else None
             price_input = money_input(
-                "Nightly price you publish",
+                BASE_RATE,
                 key=CALCULATOR_PRICE,
                 currency=currency,
                 default=default_price,
             )
             if not price_input:
-                st.info("Enter the nightly price you publish (or plan to) on Airbnb.")
+                st.info(f"Enter your {BASE_RATE.lower()}: the price you publish, before discounts.")
                 return None
             price = float(price_input)
     return StayPricing(price, int(nights), weekly, monthly, float(cleaning or 0))
@@ -204,9 +226,7 @@ def _fees_section(saved: dict[str, Any]) -> FeePolicy:
     return FeePolicy(host_fee, vat_on_fee, 19.0 if responsible else 0.0)
 
 
-def _costs_section(
-    saved: dict[str, Any], currency: str, market: MarketData | None
-) -> tuple[OperatingCosts, float]:
+def _costs_section(saved: dict[str, Any], currency: str) -> tuple[OperatingCosts, int]:
     with st.container(border=True):
         st.subheader("3 · Your monthly costs")
         st.caption(
@@ -223,19 +243,13 @@ def _costs_section(
                 saved.get("per_booking") or DEFAULT_PER_BOOKING, "per_booking", currency
             )
         c1, c2 = st.columns(2)
-        market_hint = _market_occupancy(market)
-        occupancy = c1.slider(
-            "Expected occupancy %",
-            0,
-            100,
-            int(saved.get("occupancy_pct", 75)),
-            help="Share of the month's nights you expect to be booked."
-            + (
-                f" Competitors: about {market_hint:.0f}% of their next 60 days are not "
-                "bookable (a rough upper bound)."
-                if market_hint is not None
-                else ""
-            ),
+        paid_nights = c1.number_input(
+            "Paid nights per 30-day month",
+            1,
+            30,
+            finance_settings.paid_nights(saved),
+            help="Nights actually paid out of the 30 committed: long stays leave gaps "
+            "between guests.",
         )
         income_tax = c2.number_input(
             "Income tax provision % (on profit)",
@@ -245,7 +259,7 @@ def _costs_section(
             step=1.0,
             help="Optional: set aside part of the profit for income tax.",
         )
-    return OperatingCosts(fixed, per_booking, income_tax), float(occupancy)
+    return OperatingCosts(fixed, per_booking, income_tax), int(paid_nights)
 
 
 def _cost_editor(defaults: Mapping[str, object], key: str, currency: str) -> dict[str, float]:
@@ -281,9 +295,9 @@ def _booking_result(booking: BookingBreakdown, currency: str) -> None:
         f"A {booking.nights}-night stay, from what the guest pays to what reaches your account.",
     )
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Guest pays", format_money(booking.guest_pays, currency))
+    c1.metric(GUEST_TOTAL, format_money(booking.guest_pays, currency))
     c2.metric(
-        "Airbnb keeps",
+        "Airbnb fees",
         format_money(booking.airbnb_fee + booking.vat_on_fee, currency),
         help="Service fee plus the VAT on it.",
     )
@@ -292,7 +306,7 @@ def _booking_result(booking: BookingBreakdown, currency: str) -> None:
         format_money(booking.payout_after_vat, currency),
         help="After Airbnb's fee and, if it applies, the VAT you owe on the stay.",
     )
-    c4.metric("Net per night", format_money(booking.per_night, currency))
+    c4.metric(f"{HOST_PAYOUT} per night", format_money(booking.per_night, currency))
 
     lines = [
         (
@@ -301,15 +315,15 @@ def _booking_result(booking: BookingBreakdown, currency: str) -> None:
             booking.accommodation,
         ),
         ("Cleaning fee", booking.cleaning_fee),
-        ("Guest pays", booking.guest_pays),
+        (GUEST_TOTAL, booking.guest_pays),
         ("Airbnb service fee", -booking.airbnb_fee),
         ("VAT on Airbnb's fee", -booking.vat_on_fee),
-        ("Airbnb payout", booking.payout),
+        (HOST_PAYOUT, booking.payout),
         ("VAT you owe on the stay", -booking.stay_vat),
-        ("You keep", booking.payout_after_vat),
+        ("You keep after VAT", booking.payout_after_vat),
     ]
     table = pd.DataFrame(
-        [(label, round(amount)) for label, amount in lines if amount or "Guest" in label],
+        [(label, round(amount)) for label, amount in lines if amount or label == GUEST_TOTAL],
         columns=["Line", "Amount"],
     )
     st.dataframe(
@@ -462,44 +476,34 @@ def _save_defaults(
     pricing: StayPricing,
     policy: FeePolicy,
     costs: OperatingCosts,
-    occupancy: float,
+    paid_nights: int,
 ) -> None:
     if not st.button("Save these values as my defaults", icon=":material/save:"):
         return
     raw = read_raw_config(config_path())
-    raw[_RAW_SECTION] = {
-        "nightly_price": round(pricing.nightly_price),
+    raw.setdefault("my_listing", {}).update(
+        {
+            "nightly_price": round(pricing.nightly_price),
+            "cleaning_fee": round(pricing.cleaning_fee),
+            "weekly_discount_pct": pricing.weekly_discount_pct,
+            "monthly_discount_pct": pricing.monthly_discount_pct,
+        }
+    )
+    raw[finance_settings.SECTION] = {
         "nights": pricing.nights,
-        "cleaning_fee": round(pricing.cleaning_fee),
-        "weekly_discount_pct": pricing.weekly_discount_pct,
-        "monthly_discount_pct": pricing.monthly_discount_pct,
         "host_fee_pct": policy.host_fee_pct,
         "vat_on_fee_pct": policy.vat_on_fee_pct,
         "stay_vat_pct": policy.stay_vat_pct,
         "fixed_monthly": {k: round(v) for k, v in costs.fixed_monthly.items()},
         "per_booking": {k: round(v) for k, v in costs.per_booking.items()},
         "income_tax_pct": costs.income_tax_pct,
-        "occupancy_pct": occupancy,
+        "paid_nights_per_month": paid_nights,
     }
     save_raw_config(raw, config_path())
     st.toast("Saved: the calculator will open with these values.", icon=":material/check_circle:")
 
 
 # --- helpers -------------------------------------------------------------------------
-
-
-def _saved_inputs() -> dict[str, Any]:
-    try:
-        section_data = read_raw_config(config_path()).get(_RAW_SECTION)
-    except Exception:
-        return {}
-    return dict(section_data) if isinstance(section_data, dict) else {}
-
-
-def _my_price(settings: AppSettings) -> int | None:
-    shared = st.session_state.get("_my_nightly_price")
-    configured = settings.my_listing.nightly_price
-    return shared or (round(configured) if configured else None)
 
 
 def _market_discounts(market: MarketData | None) -> tuple[float | None, float | None]:
@@ -519,12 +523,6 @@ def _market_discounts(market: MarketData | None) -> tuple[float | None, float | 
         round(sum(weekly) / len(weekly)) if weekly else None,
         round(sum(monthly) / len(monthly)) if monthly else None,
     )
-
-
-def _market_occupancy(market: MarketData | None) -> float | None:
-    if market is None:
-        return None
-    return market.bundle.availability.median_unavailable_pct
 
 
 def _market_typical_price(market: MarketData | None, nights: int) -> float | None:

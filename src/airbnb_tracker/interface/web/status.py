@@ -15,7 +15,7 @@ import streamlit as st
 from airbnb_tracker.application.progress import Phase
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import config_path, settings_or_none
-from airbnb_tracker.interface.web.data import ago, last_update
+from airbnb_tracker.interface.web.data import ago, database_version, last_update, sample_status
 from airbnb_tracker.interface.web.estimates import RunEstimate, estimate
 from airbnb_tracker.interface.web.jobs import PHASE_LABELS, Job, JobRunner
 from airbnb_tracker.interface.web.navigation import link
@@ -119,9 +119,25 @@ def sidebar_status() -> None:
                 progress_panel(job, runner, key="sidebar", compact=True)
                 return
             st.caption(f"Last update: {ago(last_update(settings))}")
+            _sample_badge(settings)
             link("collect", "Update data", ":material/sync:")
 
         live_job(runner, render)
+
+
+def _sample_badge(settings: AppSettings) -> None:
+    version = database_version(settings)
+    if version is None:
+        return
+    searches, failed, truncated = sample_status(str(settings.storage.database_path), version)
+    if not searches:
+        return
+    if failed:
+        st.caption(f":orange[Partial sample: {failed} of {searches} searches failed]")
+    elif truncated:
+        st.caption(f":orange[Partial sample: Airbnb truncated {truncated} of {searches} searches]")
+    else:
+        st.caption(f":green[Complete sample: {searches} searches]")
 
 
 def clock(seconds: float) -> str:
