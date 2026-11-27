@@ -266,7 +266,7 @@ to keep just those.
 |---|---|
 | `listing_id`, `collected_at` | Listing and observation time |
 | `date` | Calendar day |
-| `available` | Whether the day could be booked |
+| `available` | Whether the day could be booked; empty when unknown |
 | `minimum_nights` | Minimum stay required for that day |
 
 ### `reviews` — one row per review
@@ -285,7 +285,8 @@ Parameters (dates, guests, filters, center, radius or URL), `conditions_key` and
 `conditions` (what makes captures comparable), `collector_version`, `duration_seconds`,
 `truncated` and `error`. Each search has a `status` (`complete`, `partial`, `empty`,
 `failed`, with `failure`: `request_failed`, `format_changed`, `prices_unreadable`) and row
-counts: `rows_received` → `rows_parsed` → `rows_kept` → `rows_priced` /
+counts: `rows_received` → `rows_parsed` → minus `rows_duplicates`, `rows_filtered_out`
+(area, filters) and `rows_over_limit` → `rows_kept` → `rows_priced` /
 `rows_price_excluded`. The number of result pages is not available: pyairbnb does not
 expose it.
 
@@ -365,7 +366,11 @@ Genuine deep discounts (≥ 40%) are real offers and stay in; the Data quality p
   filters). Changing any of them starts a new reference; a failed search keeps the last
   valid capture with the same conditions, and the price screen says so.
 - **"Unavailable" is not "booked"**: it may be a booking, a host block or a stay restriction.
-  Treat it as an approximation of occupancy.
+  Treat it as an approximation of occupancy. Days whose status Airbnb does not state are
+  *unknown*: they stay out of the rate and lower the calendar coverage that is reported
+  with it.
+- **Stay lengths are compared on the same listings** and check-in dates; the prices page
+  says how many matched and how much of a plain-median difference is only a sample effect.
 - **Outliers** are detected automatically (see above); when analysing the CSV files
   yourself, filter on `price_outlier` to reproduce the app's numbers.
 - **Airbnb changes its internal API often.** Extraction relies on

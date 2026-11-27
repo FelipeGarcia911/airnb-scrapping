@@ -70,9 +70,57 @@ def los_curve(pricing: pd.DataFrame, listing_ids: set[str] | None = None) -> pd.
             "Listings": grouped.size(),
         }
     )
-    base = curve["Median"].iloc[0] if len(curve) else None
-    curve["Change vs shortest"] = (curve["Median"] / base - 1) * 100 if base else None
+    if len(curve):
+        shortest = int(curve.index[0])
+        paired = [paired_change(latest, shortest, int(n)) for n in curve.index]
+        curve["Change vs shortest"] = [p.change_pct for p in paired]
+        curve["Matched"] = [p.listings for p in paired]
+        curve["Sample effect"] = [p.sample_effect_pct for p in paired]
     return curve.round(0)
+
+
+@dataclass(frozen=True)
+class PairedChange:
+    """Nightly price change between two stay lengths, separating price from sample.
+
+    ``change_pct`` uses only listings priced for both lengths on the same check-in
+    (same conditions, latest capture). ``sample_effect_pct`` is how much of the change
+    between the full medians comes from comparing different listings instead.
+    """
+
+    listings: int  # listings matched on both lengths
+    pairs: int  # (listing, check-in) pairs
+    change_pct: float | None
+    unpaired_change_pct: float | None
+
+    @property
+    def sample_effect_pct(self) -> float | None:
+        if self.change_pct is None or self.unpaired_change_pct is None:
+            return None
+        return self.unpaired_change_pct - self.change_pct
+
+
+def paired_change(latest: pd.DataFrame, nights_a: int, nights_b: int) -> PairedChange:
+    """``latest``: the latest pricing rows (see :func:`latest_pricing`)."""
+    priced = latest[latest["nightly_price"].notna()]
+    a = priced[priced["nights"] == nights_a].groupby(["listing_id", "check_in"])["nightly_price"]
+    b = priced[priced["nights"] == nights_b].groupby(["listing_id", "check_in"])["nightly_price"]
+    pairs = pd.concat({"a": a.median(), "b": b.median()}, axis=1).dropna()
+    per_listing = pairs.groupby(level="listing_id").median()
+    return PairedChange(
+        listings=len(per_listing),
+        pairs=len(pairs),
+        change_pct=_change(per_listing["a"].median(), per_listing["b"].median()),
+        unpaired_change_pct=_change(
+            a.median().groupby(level="listing_id").median().median(),
+            b.median().groupby(level="listing_id").median().median(),
+        ),
+    )
+
+
+def _change(before: object, after: object) -> float | None:
+    start, end = as_float(before), as_float(after)
+    return (end / start - 1) * 100 if start and end is not None else None
 
 
 def los_ladder(pricing: pd.DataFrame, listings: pd.DataFrame) -> pd.DataFrame:
@@ -118,7 +166,7 @@ def future_demand(
     ]
     daily = window.groupby("date").agg(
         unavailable_pct=("available", lambda s: (1 - s.mean()) * 100),
-        listings=("listing_id", "nunique"),
+        listings=("available", "count"),  # listings whose availability is known
     )
     daily = daily.reset_index()
     daily["unavailable_pct"] = daily["unavailable_pct"].round(0)

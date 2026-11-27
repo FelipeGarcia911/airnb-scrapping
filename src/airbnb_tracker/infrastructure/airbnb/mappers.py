@@ -10,6 +10,7 @@ import html
 import logging
 import re
 from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -134,11 +135,13 @@ class DetailsMapper:
 
     @staticmethod
     def _to_listing(listing_id: ListingId, raw: RawData) -> Listing:
-        summary = (raw.get("sub_description") or {}).get("title", "")
+        overview = raw.get("sub_description") or {}
+        summary = str(overview.get("title") or "")
         rating = raw.get("rating") or {}
         review_count = int(rating.get("review_count") or 0)
         satisfaction = rating.get("guest_satisfaction")
-        layout = parse_layout(summary)
+        # The layout is in the title ("… · 2 bedrooms · 2 baths") or in the items list.
+        layout = parse_layout(" · ".join([summary, *map(str, overview.get("items") or [])]))
         return Listing(
             id=listing_id,
             name=raw.get("title") or str(listing_id),
@@ -159,16 +162,22 @@ class CalendarMapper:
     """Maps ``pyairbnb.get_calendar(return_dataclass=False)`` months to CalendarDays."""
 
     def to_days(self, months: Iterable[RawData]) -> list[CalendarDay]:
-        return [
-            CalendarDay(
-                day=date.fromisoformat(day["calendarDate"]),
-                available=bool(day.get("available")),
-                min_nights=_optional_int(day.get("minNights")),
-            )
-            for month in months
-            for day in month.get("days") or []
-            if day.get("calendarDate")
-        ]
+        """One day per date. Days without a date are skipped; a date repeated with
+        different availability (overlapping months) becomes unknown."""
+        days: dict[date, CalendarDay] = {}
+        for month in months:
+            for raw in month.get("days") or []:
+                if not raw.get("calendarDate"):
+                    continue
+                day = CalendarDay(
+                    day=date.fromisoformat(raw["calendarDate"]),
+                    available=_optional_bool(raw.get("available")),
+                    min_nights=_optional_int(raw.get("minNights")),
+                )
+                seen = days.setdefault(day.day, day)
+                if seen.available != day.available:
+                    days[day.day] = replace(seen, available=None)
+        return sorted(days.values(), key=lambda d: d.day)
 
 
 def _amenities(groups: Iterable[RawData]) -> Iterator[Amenity]:
@@ -246,6 +255,11 @@ def _to_decimal(value: object) -> Decimal | None:
     if value in (None, "", 0):
         return None
     return Decimal(str(value))
+
+
+def _optional_bool(value: object) -> bool | None:
+    """Only an explicit true/false counts: a missing field stays unknown."""
+    return value if isinstance(value, bool) else None
 
 
 def _room_id(raw: object) -> object:

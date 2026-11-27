@@ -85,11 +85,12 @@ class BuildMarketReportUseCase:
         ]
         analysis = self._analyzer.analyze(competitors, query.my_nightly_price)
         discounts = DiscountStats.from_offers(competitors)
+        priced = [offer for offer in competitors if offer.quote is not None]
         return DurationReport(
             nights=nights,
             check_ins=len(snapshots),
-            observations=len(competitors),
-            listings=len({o.listing.id for o in competitors}),
+            observations=len(priced),  # only what the percentiles are computed from
+            listings=len({o.listing.id for o in priced}),
             distribution=analysis.distribution,
             median_discount_pct=discounts.median_pct,
             discounted_share_pct=discounts.discounted_share_pct,

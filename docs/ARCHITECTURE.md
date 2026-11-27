@@ -101,6 +101,27 @@ shows, per date, the search status, the capture's `search_id` and time, and warn
 newer attempt failed. *Data quality → Searches and price interpretation* lists the counts
 and the excluded prices by reason.
 
+### 4 · Availability has three states (`domain/profile.py`)
+
+- A calendar day is available, unavailable or unknown (`available=None`). Only an explicit
+  true/false from Airbnb counts; a missing or non-boolean field, or the same date repeated
+  with different values, is unknown.
+- `unavailable_pct` uses known days only; `coverage_pct` is known days ÷ window. A calendar
+  with no known days reports no rate (never "0% booked"). Unavailable still means booking,
+  host block or stay restriction, never a confirmed booking.
+- Days stored before this distinction load as unknown (`availability` column NULL).
+
+### 5 · Reproducible comparables
+
+- Each search records its conditions (rule 2) and, in `RowCounts`, what was dropped:
+  `duplicates`, `filtered_out` (area, filters), `over_limit` (beyond the nearest N).
+- Stay lengths are compared on **matched pairs**: same listing, same check-in, same
+  conditions (`interface/web/analytics.py` → `paired_change`). The prices page shows the
+  paired change, how many listings matched, and the *sample effect*: how much of the change
+  between plain medians comes from comparing different listings.
+- Report counts (`listings`, `observations`) only include offers with a comparable price,
+  the same ones behind the percentiles.
+
 ### Storage
 
 SQLite migrations only add columns (`_ADDED_COLUMNS` in `persistence/sqlite.py`); nothing
@@ -108,9 +129,16 @@ is rewritten or deleted. Views are recreated on start.
 
 ### Tests that guard these rules
 
-`tests/unit/application/test_capture_integrity.py`: unit parsing and normalisation, exclusion
-reasons, statuses, conditions key, and the end-to-end case: two searches on the same dates
-with different guests, one failing, and the report reusing only the matching history.
+- `tests/unit/application/test_capture_integrity.py`: unit parsing and normalisation,
+  exclusion reasons, statuses, conditions key, and the end-to-end case: two searches on the
+  same dates with different guests, one failing, and the report reusing only the matching
+  history.
+- `tests/unit/infrastructure/test_collector_contract.py`: the collector against saved,
+  sanitized pyairbnb responses (`tests/fixtures/airbnb/`): prices, calendar, listing page
+  and reviews, with missing fields, partial responses, changed structures and duplicates,
+  plus a check that pyairbnb still accepts our arguments. Run it before adopting a new
+  pyairbnb version.
+- `tests/unit/interface/test_paired_change.py`: price change vs sample effect.
 
 ---
 

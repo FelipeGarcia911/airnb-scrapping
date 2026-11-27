@@ -1,0 +1,120 @@
+[
+ {
+  "month": 1,
+  "year": 2027,
+  "days": [
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-01-30",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": true
+   },
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-01-31",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": false
+   }
+  ]
+ },
+ {
+  "month": 2,
+  "year": 2027,
+  "days": [
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-01-31",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": false
+   },
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-02-01",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": true
+   },
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-02-02",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    }
+   },
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-02-03",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": "yes"
+   },
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-02-04",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": true
+   },
+   {
+    "__typename": "MerlinCalendarDay",
+    "calendarDate": "2027-02-04",
+    "availableForCheckin": true,
+    "availableForCheckout": true,
+    "bookable": null,
+    "minNights": 3,
+    "maxNights": 365,
+    "price": {
+     "localPriceFormatted": null
+    },
+    "available": false
+   },
+   {
+    "price": {}
+   }
+  ]
+ }
+]

@@ -1,0 +1,71 @@
+{
+ "title": "Sample apartment near the airport",
+ "description": "Two-bedroom apartment.<br/>Pool and gym.",
+ "sub_description": {
+  "title": "Entire rental unit in Pereira, Colombia",
+  "items": [
+   "4 guests",
+   "2 bedrooms",
+   "2 beds",
+   "2 baths"
+  ]
+ },
+ "room_type": "Entire home/apt",
+ "is_super_host": true,
+ "person_capacity": 4,
+ "coordinates": {
+  "latitude": 4.8133,
+  "longitude": -75.6961
+ },
+ "rating": {
+  "guest_satisfaction": 4.85,
+  "review_count": 20,
+  "value": 4.8
+ },
+ "amenities": [
+  {
+   "title": "Parking and facilities",
+   "values": [
+    {
+     "title": "Pool",
+     "icon": "SYSTEM_POOL",
+     "available": true
+    },
+    {
+     "title": "Gym",
+     "icon": "SYSTEM_GYM",
+     "available": true
+    },
+    {
+     "title": "Dryer",
+     "icon": "SYSTEM_DRYER",
+     "available": false
+    }
+   ]
+  },
+  {
+   "title": "Internet and office",
+   "values": [
+    {
+     "title": "Wifi",
+     "icon": "SYSTEM_WI_FI"
+    },
+    {
+     "icon": "NO_TITLE"
+    }
+   ]
+  }
+ ],
+ "images": [
+  {
+   "title": "Living room",
+   "url": "https://example.invalid/1.jpg"
+  }
+ ],
+ "host": {
+  "id": "",
+  "name": "",
+  "joined_on": "",
+  "description": ""
+ }
+}

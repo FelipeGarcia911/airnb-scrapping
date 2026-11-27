@@ -49,9 +49,15 @@ class ListingProfile:
 
 @dataclass(frozen=True, slots=True)
 class CalendarDay:
+    """``available`` is ``None`` when Airbnb did not say (unknown, never "unavailable")."""
+
     day: date
-    available: bool
+    available: bool | None
     min_nights: int | None = None
+
+    @property
+    def is_known(self) -> bool:
+        return self.available is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +65,9 @@ class CalendarSnapshot:
     """One observation of a listing's calendar. Never overwritten: history matters.
 
     An unavailable day may be a booking, a host block or a stay restriction, so
-    availability is an approximation of occupancy, never a confirmed booking.
+    availability is an approximation of occupancy, never a confirmed booking. Unknown
+    days (missing from the response or without the field) are left out of the rate and
+    reported as lower coverage.
     """
 
     listing_id: ListingId
@@ -72,10 +80,16 @@ class CalendarSnapshot:
         return [d for d in self.days if start <= d.day < end]
 
     def unavailable_pct(self, window_days: int) -> float | None:
-        days = self.upcoming(window_days)
-        if not days:
+        """Share of the *known* days in the window that could not be booked."""
+        known = [d for d in self.upcoming(window_days) if d.is_known]
+        if not known:
             return None
-        return round(sum(1 for d in days if not d.available) / len(days) * 100, 1)
+        return round(sum(1 for d in known if d.available is False) / len(known) * 100, 1)
+
+    def coverage_pct(self, window_days: int) -> float:
+        """Share of the window's days whose availability is known."""
+        known = sum(1 for d in self.upcoming(window_days) if d.is_known)
+        return round(known / window_days * 100, 1) if window_days > 0 else 0.0
 
     def typical_min_nights(self, window_days: int) -> int | None:
         """Most frequent minimum stay over the window (hosts rarely vary it)."""
@@ -96,6 +110,7 @@ class AvailabilitySummary:
     listings_measured: int
     median_unavailable_pct: float | None
     median_min_nights: float | None
+    median_coverage_pct: float | None = None
 
     @classmethod
     def from_calendars(
@@ -103,10 +118,12 @@ class AvailabilitySummary:
     ) -> AvailabilitySummary:
         rates = [r for c in calendars if (r := c.unavailable_pct(window_days)) is not None]
         stays = [m for c in calendars if (m := c.typical_min_nights(window_days)) is not None]
+        coverage = [c.coverage_pct(window_days) for c in calendars]
         return cls(
             listings_measured=len(rates),
             median_unavailable_pct=round(statistics.median(rates), 1) if rates else None,
             median_min_nights=statistics.median(stays) if stays else None,
+            median_coverage_pct=round(statistics.median(coverage), 1) if coverage else None,
         )
 
 

@@ -182,7 +182,8 @@ class SearchResult:
 @dataclass(frozen=True, slots=True)
 class RowCounts:
     """Rows of one search, step by step: ``received`` from Airbnb → ``parsed`` as listings
-    → ``kept`` as competitors (area, filters, limit) → of those, ``priced`` with a
+    → minus ``duplicates``, ``filtered_out`` (outside the area or filters) and
+    ``over_limit`` (beyond the nearest N) → ``kept`` → of those, ``priced`` with a
     comparable price or ``price_excluded`` (price not interpretable)."""
 
     received: int = 0
@@ -190,6 +191,9 @@ class RowCounts:
     kept: int = 0
     priced: int = 0
     price_excluded: int = 0
+    duplicates: int = 0
+    filtered_out: int = 0
+    over_limit: int = 0
 
 
 @dataclass(frozen=True, slots=True)

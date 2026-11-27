@@ -126,6 +126,9 @@ def _ladder_label(column: str) -> str:
     return t({"title": "Listing", "is_mine": "Yours"}.get(column, column))
 
 
+SAMPLE_EFFECT_NOTICE_PP = 3
+
+
 def _length_of_stay(pricing: pd.DataFrame, listings: pd.DataFrame, currency: str) -> None:
     section(
         t("Length-of-stay discounts"),
@@ -161,7 +164,7 @@ def _length_of_stay(pricing: pd.DataFrame, listings: pd.DataFrame, currency: str
     )  # fmt: skip
     left, right = st.columns([3, 2])
     left.altair_chart(chart, width="stretch")
-    curve_columns = ("Median", "Change vs shortest", "Listings")
+    curve_columns = ("Median", "Listings", "Change vs shortest", "Matched", "Sample effect")
     view = curve[list(curve_columns)].rename(columns={c: t(c) for c in curve_columns})
     view.index.name = t("Nights")
     right.dataframe(
@@ -169,20 +172,45 @@ def _length_of_stay(pricing: pd.DataFrame, listings: pd.DataFrame, currency: str
         width="stretch",
         column_config={
             t("Median"): _AMOUNT,
-            t("Change vs shortest"): st.column_config.NumberColumn(format="%+.0f%%"),
+            t("Change vs shortest"): st.column_config.NumberColumn(
+                format="%+.0f%%",
+                help=t("Same listings and check-in dates priced at both lengths."),
+            ),
+            t("Matched"): st.column_config.NumberColumn(
+                help=t("Listings priced at this length and at the shortest one."),
+            ),
+            t("Sample effect"): st.column_config.NumberColumn(
+                format="%+.0f pp",
+                help=t(
+                    "Part of the change between the plain medians that comes from comparing "
+                    "different listings, not from different prices."
+                ),
+            ),
         },
     )
     shortest, longest = curve.index[0], curve.index[-1]
     change = analytics.as_float(curve["Change vs shortest"].iloc[-1]) or 0.0
     medians = analytics.by_label(curve["Median"])
     monthly = medians[30] * 30 if 30 in medians else None
+    matched = int(analytics.as_float(curve["Matched"].iloc[-1]) or 0)
+    sample_effect = analytics.as_float(curve["Sample effect"].iloc[-1])
     insight(
         t(
-            "From {shortest} to {longest} nights the typical nightly price changes "
-            "**{change:+.0f}%**.",
+            "From {shortest} to {longest} nights the same listings change their nightly "
+            "price **{change:+.0f}%** ({matched} listings priced at both lengths).",
             shortest=shortest,
             longest=longest,
             change=change,
+            matched=matched,
+        )
+        + (
+            t(
+                " Comparing the plain medians would add {effect:+.0f} points that only come "
+                "from a different sample.",
+                effect=sample_effect,
+            )
+            if sample_effect is not None and abs(sample_effect) >= SAMPLE_EFFECT_NOTICE_PP
+            else ""
         )
         + (
             t(" A typical month costs about **{amount}**.", amount=format_money(monthly, currency))

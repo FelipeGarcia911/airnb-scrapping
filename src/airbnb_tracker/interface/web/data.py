@@ -196,7 +196,7 @@ def _load(
         "reviews": pd.DataFrame(review_rows(dataset.reviews)),
         "search_runs": pd.DataFrame(search_run_rows(dataset.search_runs)),
     }
-    comp_set = _comp_set_tables(_current_conditions(raw, key), settings.search.comp_set_groups)
+    comp_set = _comp_set_tables(_analysable(raw, key), settings.search.comp_set_groups)
     tables = dict(comp_set)
     flagged = {str(flag.listing_id) for flag in bundle.outliers}
     pricing = tables["pricing_snapshots"]
@@ -206,10 +206,18 @@ def _load(
                       conditions_key=key)  # fmt: skip
 
 
-def _current_conditions(raw: dict[str, pd.DataFrame], key: str) -> dict[str, pd.DataFrame]:
-    """Only captures made under the current search conditions, from searches that did
-    not fail. Exports keep everything (``raw_tables``)."""
+def _analysable(raw: dict[str, pd.DataFrame], key: str) -> dict[str, pd.DataFrame]:
+    """What the analysis may use (exports keep everything in ``raw_tables``):
+
+    * prices captured under the current search conditions, from searches that did not fail;
+    * calendar availability as 1 / 0 / NaN, so unknown days drop out of every average.
+    """
     tables = dict(raw)
+    calendar = raw["calendar_snapshots"]
+    if not calendar.empty:
+        calendar = calendar.copy()
+        calendar["available"] = calendar["available"].map({True: 1.0, False: 0.0})
+        tables["calendar_snapshots"] = calendar
     runs = raw["search_runs"]
     if not runs.empty:
         runs = runs[runs["conditions_key"] == key]

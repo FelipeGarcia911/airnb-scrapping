@@ -1,0 +1,25 @@
+[
+ {
+  "id": "r1",
+  "createdAt": "2026-10-01T12:00:00Z",
+  "rating": 5,
+  "language": "es",
+  "comments": "(removed)",
+  "reviewer": {
+   "firstName": "(removed)"
+  }
+ },
+ {
+  "id": "r2",
+  "createdAt": "2026-09-15T08:30:00Z",
+  "rating": 4,
+  "language": "en"
+ },
+ {
+  "id": "r3",
+  "rating": 5
+ },
+ {
+  "createdAt": "2026-09-01T00:00:00Z"
+ }
+]

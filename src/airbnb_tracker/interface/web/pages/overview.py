@@ -145,7 +145,13 @@ def _kpis(settings: AppSettings, data: MarketData, focus: DurationReport) -> Non
         f"{availability.median_unavailable_pct:.0f}%"
         if availability.median_unavailable_pct is not None
         else "—",
-        help=t("Median over the next days: a rough sign of occupancy."),
+        help=t(
+            "Median over the next days, counting only days whose availability is known "
+            "(coverage {coverage}). A rough sign of occupancy.",
+            coverage=f"{availability.median_coverage_pct:.0f}%"
+            if availability.median_coverage_pct is not None
+            else "—",
+        ),
     )
     c5.metric(
         t("Typical minimum stay"),

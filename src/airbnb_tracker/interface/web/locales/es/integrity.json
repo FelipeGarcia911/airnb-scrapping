@@ -22,5 +22,16 @@
     "Price excluded": "Precio excluido",
     "Unit missing or unknown": "Unidad ausente o desconocida",
     "Nights shown differ from the search": "Las noches mostradas no coinciden con la búsqueda",
-    "Captured before units were recorded": "Capturado antes de registrar la unidad"
+    "Captured before units were recorded": "Capturado antes de registrar la unidad",
+    "Median over the next days, counting only days whose availability is known (coverage {coverage}). A rough sign of occupancy.": "Mediana de los próximos días, contando solo los días con disponibilidad conocida (cobertura {coverage}). Una señal aproximada de ocupación.",
+    " Comparing the plain medians would add {effect:+.0f} points that only come from a different sample.": " Comparar las medianas simples sumaría {effect:+.0f} puntos que solo vienen de una muestra distinta.",
+    "From {shortest} to {longest} nights the same listings change their nightly price **{change:+.0f}%** ({matched} listings priced at both lengths).": "De {shortest} a {longest} noches los mismos anuncios cambian su precio por noche **{change:+.0f}%** ({matched} anuncios con precio en ambas duraciones).",
+    "Listings priced at this length and at the shortest one.": "Anuncios con precio en esta duración y en la más corta.",
+    "Matched": "Emparejados",
+    "Part of the change between the plain medians that comes from comparing different listings, not from different prices.": "Parte del cambio entre las medianas simples que viene de comparar anuncios distintos, no de precios distintos.",
+    "Same listings and check-in dates priced at both lengths.": "Mismos anuncios y fechas de llegada con precio en ambas duraciones.",
+    "Sample effect": "Efecto de muestra",
+    "Duplicates": "Duplicados",
+    "Outside area or filters": "Fuera de zona o filtros",
+    "Beyond the limit": "Fuera del límite"
 }

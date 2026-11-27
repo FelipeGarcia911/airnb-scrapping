@@ -144,15 +144,15 @@ CREATE TABLE IF NOT EXISTS search_runs (
     error             TEXT
 );
 
-CREATE VIEW IF NOT EXISTS v_calendar AS
-SELECT c.listing_id, c.captured_at, d.day, d.available, d.min_nights
-FROM calendar_days d JOIN calendar_snapshots c ON c.id = d.calendar_id;
 """
 
 # Columns added after the first release: added in place, existing rows keep NULL there
 # (Expand-only migration: nothing is rewritten or deleted).
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "snapshots": {"search_id": "TEXT", "conditions_key": "TEXT"},
+    # available / unavailable / unknown. NULL: stored before unknown days were told
+    # apart (a missing field was saved as unavailable), so those days count as unknown.
+    "calendar_days": {"availability": "TEXT"},
     "offers": {
         "price_unit": "TEXT",  # stay, night, week, month, unknown (NULL: not recorded)
         "price_text": "TEXT",
@@ -173,10 +173,21 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "rows_parsed": "INTEGER",
         "rows_priced": "INTEGER",
         "rows_price_excluded": "INTEGER",
+        "rows_duplicates": "INTEGER",
+        "rows_filtered_out": "INTEGER",
+        "rows_over_limit": "INTEGER",
     },
 }
 
 _VIEWS = """
+DROP VIEW IF EXISTS v_calendar;
+CREATE VIEW v_calendar AS
+SELECT c.listing_id, c.captured_at, d.day,
+       CASE d.availability WHEN 'available' THEN 1 WHEN 'unavailable' THEN 0 END AS available,
+       COALESCE(d.availability, 'not_recorded') AS availability,
+       d.min_nights
+FROM calendar_days d JOIN calendar_snapshots c ON c.id = d.calendar_id;
+
 DROP VIEW IF EXISTS v_pricing;
 CREATE VIEW v_pricing AS
 SELECT o.listing_id, s.captured_at, s.check_in, s.check_out,
@@ -340,11 +351,11 @@ class SqliteRepository:
                 (str(calendar.listing_id), calendar.captured_at.isoformat()),
             )
             connection.executemany(
-                _insert("calendar_days", ("calendar_id", "day", "available", "min_nights")),
-                [
-                    (cursor.lastrowid, d.day.isoformat(), int(d.available), d.min_nights)
-                    for d in calendar.days
-                ],
+                _insert(
+                    "calendar_days",
+                    ("calendar_id", "day", "available", "availability", "min_nights"),
+                ),
+                [_day_values(cursor.lastrowid, day) for day in calendar.days],
             )
 
     def latest_calendars(self) -> dict[ListingId, CalendarSnapshot]:
@@ -366,7 +377,7 @@ class SqliteRepository:
                 days.setdefault(d["calendar_id"], []).append(
                     CalendarDay(
                         date.fromisoformat(d["day"]),
-                        bool(d["available"]),
+                        _availability(d["availability"]),
                         _opt_int(d["min_nights"]),
                     )
                 )
@@ -451,6 +462,9 @@ class SqliteRepository:
             "rows_parsed": run.counts.parsed,
             "rows_priced": run.counts.priced,
             "rows_price_excluded": run.counts.price_excluded,
+            "rows_duplicates": run.counts.duplicates,
+            "rows_filtered_out": run.counts.filtered_out,
+            "rows_over_limit": run.counts.over_limit,
         }
         with self._connection() as connection:
             connection.execute(_insert("search_runs", tuple(values)), tuple(values.values()))
@@ -595,6 +609,19 @@ def _row_to_reading(row: sqlite3.Row, currency: str) -> PriceReading:
     )
 
 
+_AVAILABILITY = {True: "available", False: "unavailable", None: "unknown"}
+
+
+def _day_values(calendar_id: int | None, day: CalendarDay) -> tuple[object, ...]:
+    """``available`` stays 0/1 for older readers; ``availability`` is the real state."""
+    state = _AVAILABILITY[day.available]
+    return calendar_id, day.day.isoformat(), int(bool(day.available)), state, day.min_nights
+
+
+def _availability(stored: str | None) -> bool | None:
+    return {"available": True, "unavailable": False}.get(stored or "")
+
+
 def _add_missing_columns(connection: sqlite3.Connection) -> None:
     for table, columns in _ADDED_COLUMNS.items():
         existing = {r["name"] for r in connection.execute(f"PRAGMA table_info({table})")}
@@ -631,6 +658,9 @@ def _row_to_run(row: sqlite3.Row) -> SearchRun:
             kept=row["results_kept"],
             priced=row["rows_priced"] or 0,
             price_excluded=row["rows_price_excluded"] or 0,
+            duplicates=row["rows_duplicates"] or 0,
+            filtered_out=row["rows_filtered_out"] or 0,
+            over_limit=row["rows_over_limit"] or 0,
         ),
         status=SearchStatus(row["status"]) if row["status"] else _older_run_status(row),
         truncated=bool(row["truncated"]),

@@ -20,7 +20,6 @@ from airbnb_tracker.application.dto import (
     SearchConditions,
     SearchCriteria,
     SearchFilters,
-    SearchResult,
     SearchRun,
     SearchStatus,
     classify_search,
@@ -143,20 +142,33 @@ class ScanMarketUseCase:
             self._record(run_id, command, started_at, summary)
             return summary
 
-        competitors = _unique(o for o in result.offers if is_competitor.is_satisfied_by(o.listing))
-        competitors = _nearest(competitors, command.center, command.max_listings)
+        unique = _unique(result.offers)
+        competitors = [o for o in unique if is_competitor.is_satisfied_by(o.listing)]
+        kept = _nearest(competitors, command.center, command.max_listings)
         self._snapshots.add(
             Snapshot(
                 captured_at=started_at,
                 stay=stay,
                 currency=command.currency,
                 guests=command.filters.guests,
-                offers=tuple(competitors),
+                offers=tuple(kept),
                 search_id=search_id,
                 conditions_key=command.conditions.key,
             )
         )
-        summary = _summary(stay, result, competitors, search_id)
+        counts = RowCounts(
+            received=result.rows_received,
+            parsed=len(result.offers),
+            kept=len(kept),
+            priced=sum(1 for offer in kept if offer.quote is not None),
+            price_excluded=sum(1 for offer in kept if offer.rejected is not None),
+            duplicates=len(result.offers) - len(unique),
+            filtered_out=len(unique) - len(competitors),
+            over_limit=len(competitors) - len(kept),
+        )
+        status, failure = classify_search(counts, truncated=result.truncated)
+        summary = ScanSummary(stay, counts, status, failure, truncated=result.truncated,
+                              search_id=search_id)  # fmt: skip
         self._record(run_id, command, started_at, summary)
         return summary
 
@@ -211,21 +223,6 @@ def _outcome(summary: ScanSummary) -> str:
     note = " (partial)" if summary.status is SearchStatus.PARTIAL else ""
     excluded = f", {counts.price_excluded} prices not interpreted" if counts.price_excluded else ""
     return f"{where}: {counts.kept} listings, {counts.priced} priced{excluded}{note}"
-
-
-def _summary(
-    stay: StayPeriod, result: SearchResult, kept: list[ListingOffer], search_id: str
-) -> ScanSummary:
-    counts = RowCounts(
-        received=result.rows_received,
-        parsed=len(result.offers),
-        kept=len(kept),
-        priced=sum(1 for offer in kept if offer.quote is not None),
-        price_excluded=sum(1 for offer in kept if offer.rejected is not None),
-    )
-    status, failure = classify_search(counts, truncated=result.truncated)
-    return ScanSummary(stay, counts, status, failure, truncated=result.truncated,
-                       search_id=search_id)  # fmt: skip
 
 
 def _nearest(

@@ -84,7 +84,8 @@ def _availability(bundle: ReportBundle) -> list[str]:
         f"Calendars of {availability.listings_measured} competitors "
         f"(next {bundle.availability_window_days} days):",
         f"  Unavailable days (approx. occupancy): "
-        f"median {availability.median_unavailable_pct:.0f}%",
+        f"median {availability.median_unavailable_pct:.0f}% of the days with known status "
+        f"(median coverage {availability.median_coverage_pct or 0:.0f}%)",
     ]
     if availability.median_min_nights is not None:
         lines.append(f"  Minimum stay: median {availability.median_min_nights:g} nights")

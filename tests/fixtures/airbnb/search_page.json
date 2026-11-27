@@ -1,0 +1,841 @@
+[
+ {
+  "room_id": "1001",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1001",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "for 7 nights",
+    "curency_symbol": "$ COP",
+    "amount": 1050000,
+    "discount": 980000
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1002",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1002",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "night",
+    "curency_symbol": "$ COP",
+    "amount": 150000,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1003",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1003",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "weekly",
+    "curency_symbol": "$ COP",
+    "amount": 900000,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1004",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1004",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "monthly",
+    "curency_symbol": "$ COP",
+    "amount": 3600000,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1005",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1005",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "",
+    "curency_symbol": "$ COP",
+    "amount": 700000,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1006",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1006",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "for 5 nights",
+    "curency_symbol": "$ COP",
+    "amount": 700000,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1001",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1001",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "for 7 nights",
+    "curency_symbol": "$ COP",
+    "amount": 1050000,
+    "discount": 980000
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1007",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1007",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "",
+    "amount": 0,
+    "discount": null
+   }
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 0",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "night",
+    "curency_symbol": "$ COP",
+    "amount": 1,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1008",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1008",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": "$150,000 night",
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 4.8133,
+   "longitud": -75.6961
+  }
+ },
+ {
+  "room_id": "1009",
+  "category": "",
+  "structuredContent": {
+   "primaryLine": [
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bedroom",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 queen bed",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BEDINFO"
+    },
+    {
+     "__typename": "MainSectionMessage",
+     "body": "1 bath",
+     "bodyA11yLabel": null,
+     "bodyType": null,
+     "fontWeight": null,
+     "headline": null,
+     "type": "BATHROOMINFO"
+    }
+   ]
+  },
+  "passportData": {},
+  "paymentMessages": [],
+  "kind": "",
+  "name": "Sample listing 1009",
+  "title": "Apartment in Pereira",
+  "type": "",
+  "long_stay_discount": {
+   "amount": -19.97,
+   "currency_symbol": "$ USD"
+  },
+  "fee": {
+   "airbnb": {},
+   "cleaning": {}
+  },
+  "price": {
+   "unit": {
+    "qualifier": "night",
+    "curency_symbol": "$ COP",
+    "amount": 150000,
+    "discount": null
+   },
+   "total": {
+    "currency_symbol": "",
+    "amount": 0
+   },
+   "break_down": []
+  },
+  "rating": {
+   "value": 4.83,
+   "reviewCount": "325"
+  },
+  "images": [
+   {
+    "url": "https://example.invalid/photo.jpg"
+   }
+  ],
+  "badges": [
+   "GUEST_FAVORITE"
+  ],
+  "coordinates": {
+   "latitude": 5.5,
+   "longitud": -75.0
+  }
+ }
+]

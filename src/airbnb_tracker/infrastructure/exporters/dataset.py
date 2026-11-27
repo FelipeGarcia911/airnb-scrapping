@@ -157,6 +157,9 @@ def search_run_rows(runs: Sequence[SearchRun]) -> Iterator[dict[str, Any]]:
             "rows_kept": run.counts.kept,
             "rows_priced": run.counts.priced,
             "rows_price_excluded": run.counts.price_excluded,
+            "rows_duplicates": run.counts.duplicates,
+            "rows_filtered_out": run.counts.filtered_out,
+            "rows_over_limit": run.counts.over_limit,
         }
 
 
