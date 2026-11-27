@@ -6,6 +6,7 @@ try a base rate or a discount, and get the values to enter in Airbnb, in one pla
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -26,7 +27,7 @@ from airbnb_tracker.interface.web import analytics, finance_settings
 from airbnb_tracker.interface.web.components import caveat, insight, nights_picker, section
 from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.data import MarketData
-from airbnb_tracker.interface.web.formatting import format_date, format_money
+from airbnb_tracker.interface.web.formatting import format_date, format_datetime, format_money
 from airbnb_tracker.interface.web.glossary import (
     ACCOMMODATION,
     BASE_RATE,
@@ -100,12 +101,10 @@ def render() -> None:
         cleaning_fee=float(mine.cleaning_fee or 0),
     )
     yours = current.base_nightly * (1 - mine.discount_for(nights) / 100)
+    runs = data.tables["search_runs"]
     table = analytics.benchmarks_by_check_in(
-        pricing,
-        comp_ids,
-        nights,
-        analytics.searched_check_ins(data.raw_tables["search_runs"], nights),
-    )
+        pricing, comp_ids, nights, analytics.searched_check_ins(runs, nights)
+    ).merge(analytics.latest_attempts(runs, nights), on="check_in", how="left")
     row = _date_table(
         table,
         yours=yours,
@@ -209,6 +208,7 @@ def _date_table(
             gap_column: ((yours / table["median"] - 1) * 100).round(0),
             t("Comparables"): table["comparables"].fillna(0).astype(int),
             t("Captured"): [format_date(v) if pd.notna(v) else "—" for v in table["captured"]],
+            t("Search"): [_search_note(r) for _, r in table.iterrows()],
         }
     )
     amount = st.column_config.NumberColumn(format="localized")
@@ -247,11 +247,23 @@ def _date_table(
         return None
     st.caption(
         t(
-            "Simulating check-in **{date}** ({count} comparables).",
+            "Simulating check-in **{date}** ({count} comparables) · prices from search "
+            "`{search}` captured {captured}.",
             date=row["check_in"],
             count=int(row["comparables"]),
+            search=str(row["search_id"])[:8],
+            captured=format_datetime(datetime.fromisoformat(str(row["captured"]))),
         )
     )
+    if _newer_attempt_failed(row):
+        st.warning(
+            t(
+                "The latest search for this date failed ({when}): showing the previous valid "
+                "capture.",
+                when=format_datetime(datetime.fromisoformat(str(row["attempted_at"]))),
+            ),
+            icon=":material/history:",
+        )
     return row
 
 
@@ -455,6 +467,29 @@ def _setup_sheet(
         )
         save_raw_config(raw, config_path())
         st.toast(t("Saved. Apply the same values in Airbnb."), icon=":material/check_circle:")
+
+
+_SEARCH_STATUS = {
+    "complete": "Complete",
+    "partial": "Partial",
+    "empty": "No listings returned",
+    "failed": "Failed",
+}
+
+
+def _newer_attempt_failed(row: pd.Series) -> bool:
+    if row.get("attempt_status") != "failed":
+        return False
+    captured = row.get("captured")
+    return pd.isna(captured) or str(row["attempted_at"]) > str(captured)
+
+
+def _search_note(row: pd.Series) -> str:
+    """Status of the latest search of a date, and whether an older capture is shown."""
+    if _newer_attempt_failed(row):
+        return t("⚠ Failed · previous capture") if pd.notna(row["captured"]) else t("⚠ Failed")
+    status = row.get("attempt_status")
+    return t(_SEARCH_STATUS[status]) if isinstance(status, str) else "—"
 
 
 def _start_row(table: pd.DataFrame, last: dict[str, Any]) -> Any:

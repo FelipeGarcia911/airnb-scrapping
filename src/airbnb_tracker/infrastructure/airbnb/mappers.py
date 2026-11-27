@@ -10,7 +10,6 @@ import html
 import logging
 import re
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -18,9 +17,10 @@ from typing import Any
 from airbnb_tracker.application.dto import ListingDetails
 from airbnb_tracker.domain.entities import Listing, ListingOffer, PriceQuote, RoomType
 from airbnb_tracker.domain.exceptions import DomainError
+from airbnb_tracker.domain.price_reading import DisplayedPrice, Exclusion, read_price
 from airbnb_tracker.domain.profile import Amenity, CalendarDay, Review
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, Money, StayPeriod
-from airbnb_tracker.infrastructure.airbnb.text_parsing import parse_layout, parse_price_unit
+from airbnb_tracker.infrastructure.airbnb.text_parsing import parse_layout, parse_qualifier
 
 logger = logging.getLogger(__name__)
 
@@ -52,39 +52,6 @@ def property_type_from_title(title: str | None) -> str:
     return (title or "").split(" in ")[0].strip()
 
 
-@dataclass(frozen=True, slots=True)
-class DisplayedPrice:
-    """A price exactly as Airbnb shows it (Introduce Parameter Object)."""
-
-    final_amount: Decimal | None
-    original_amount: Decimal | None
-    qualifier: str | None
-
-    def to_quote(
-        self, listing_id: ListingId, stay: StayPeriod, currency: str, captured_at: datetime
-    ) -> PriceQuote | None:
-        """Normalise the displayed price into a stay total, whatever unit Airbnb used.
-
-        Airbnb shows "for 7 nights" totals for short stays but *average monthly* prices
-        for 28+ nights, so a 60-night "monthly" price must be doubled.
-        """
-        if not self.final_amount:
-            return None
-        unit = parse_price_unit(self.qualifier)
-        has_discount = self.original_amount and self.original_amount != self.final_amount
-        return PriceQuote(
-            listing_id=listing_id,
-            stay=stay,
-            total=Money(unit.to_stay_total(self.final_amount, stay.nights), currency),
-            original_total=(
-                Money(unit.to_stay_total(self.original_amount, stay.nights), currency)
-                if has_discount and self.original_amount
-                else None
-            ),
-            captured_at=captured_at,
-        )
-
-
 class SearchResultMapper:
     """Maps one entry of ``pyairbnb.search_all`` to a ListingOffer."""
 
@@ -97,17 +64,40 @@ class SearchResultMapper:
     ) -> ListingOffer | None:
         try:
             listing = self._to_listing(raw)
-            unit = raw.get("price", {}).get("unit", {})
-            price = DisplayedPrice(
-                final_amount=_to_decimal(unit.get("discount")) or _to_decimal(unit.get("amount")),
-                original_amount=_to_decimal(unit.get("amount")),
-                qualifier=unit.get("qualifier"),
+            reading = read_price(self._displayed_price(raw), stay)
+            if reading.total is None or not reading.is_comparable:
+                no_price = reading.exclusion is Exclusion.NO_AMOUNT
+                return ListingOffer(listing, rejected=None if no_price else reading)
+            quote = PriceQuote(
+                listing_id=listing.id,
+                stay=stay,
+                total=Money(reading.total, self._currency),
+                original_total=(
+                    Money(reading.original_total, self._currency)
+                    if reading.original_total is not None
+                    else None
+                ),
+                captured_at=captured_at,
+                reading=reading,
             )
-            quote = price.to_quote(listing.id, stay, self._currency, captured_at)
-        except (DomainError, KeyError, TypeError, ValueError) as error:
-            logger.debug("Skipping unparseable search result %s: %s", raw.get("room_id"), error)
+        except (DomainError, KeyError, TypeError, ValueError, AttributeError) as error:
+            logger.debug("Skipping unparseable search result %s: %s", _room_id(raw), error)
             return None
         return ListingOffer(listing, quote)
+
+    def _displayed_price(self, raw: RawData) -> DisplayedPrice:
+        """The amount as shown: the discounted one when Airbnb shows a discount."""
+        unit = (raw.get("price") or {}).get("unit") or {}
+        qualifier_text = str(unit.get("qualifier") or "")
+        qualifier = parse_qualifier(qualifier_text)
+        return DisplayedPrice(
+            amount=_to_decimal(unit.get("discount")) or _to_decimal(unit.get("amount")),
+            original_amount=_to_decimal(unit.get("amount")),
+            currency=self._currency,
+            text=qualifier_text,
+            unit=qualifier.unit,
+            stated_nights=qualifier.stated_nights,
+        )
 
     def _to_listing(self, raw: RawData) -> Listing:
         title = raw.get("title", "")
@@ -256,3 +246,7 @@ def _to_decimal(value: object) -> Decimal | None:
     if value in (None, "", 0):
         return None
     return Decimal(str(value))
+
+
+def _room_id(raw: object) -> object:
+    return raw.get("room_id") if isinstance(raw, Mapping) else None

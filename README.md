@@ -247,10 +247,14 @@ to keep just those.
 
 | Field | Description |
 |---|---|
+| `search_id`, `conditions_key` | The search that produced the row and its conditions (see `search_runs`) |
 | `listing_id`, `collected_at` | Listing and observation time |
 | `check_in`, `check_out`, `nights`, `guests`, `currency` | Scenario searched |
+| `displayed_amount`, `price_text`, `price_unit` | The price exactly as Airbnb showed it, its qualifier ("for 7 nights", "monthly") and the unit read from it (`stay`, `night`, `week`, `month`, `unknown`) |
+| `normalisation` | How the stay total was obtained (`stay_total`, `unit_price_x_nights`, `none`) |
+| `excluded_reason` | Why the price is left out of every statistic (`unknown_unit`, `nights_mismatch`, `not_recorded`); empty when it is comparable |
 | `original_price` | Stay price before discounts |
-| `total_price` | **Stay price after discounts** (see limitations) |
+| `total_price` | **Stay price after discounts** (see limitations); empty when the price was excluded |
 | `nightly_price` | `total_price / nights` |
 | `discount_pct` | Discount applied (weekly, monthly, special offer) |
 | `is_available` | Bookable for those dates |
@@ -277,10 +281,13 @@ Reviewer names, photos and review texts are deliberately **not** stored (persona
 
 ### `search_runs` — one row per search
 
-Parameters (dates, guests, filters, center, radius or URL), `results_found`, `results_kept`,
-`duration_seconds`, `truncated` (Airbnb hit its page cap, results may be incomplete) and
-`error`. Useful to evaluate how well each query covers the market. The number of result pages
-is not available: pyairbnb does not expose it.
+Parameters (dates, guests, filters, center, radius or URL), `conditions_key` and
+`conditions` (what makes captures comparable), `collector_version`, `duration_seconds`,
+`truncated` and `error`. Each search has a `status` (`complete`, `partial`, `empty`,
+`failed`, with `failure`: `request_failed`, `format_changed`, `prices_unreadable`) and row
+counts: `rows_received` → `rows_parsed` → `rows_kept` → `rows_priced` /
+`rows_price_excluded`. The number of result pages is not available: pyairbnb does not
+expose it.
 
 ### SQLite database
 
@@ -349,8 +356,14 @@ Genuine deep discounts (≥ 40%) are real offers and stay in; the Data quality p
   those charges in search results or in the listing price lookup (verified on several
   listings: only nights × rate and discounts are returned). It is the stay price with
   discounts applied.
-- **Stays of 28+ nights** are shown by Airbnb as an *average monthly price*; the tool converts
-  it to the stay total (60 nights = 2 months).
+- **Every price is read by its unit.** Airbnb shows stay totals ("for 7 nights"), nightly
+  prices or average weekly/monthly prices (28+ nights; a month is 30 nights). A missing or
+  unknown unit, or a "for N nights" that does not match the search, is kept with its reason
+  but never enters a statistic. Captures made before units were recorded are excluded the
+  same way: collect again to analyse them.
+- **Prices are only compared under the same conditions** (guests, currency, area or URL,
+  filters). Changing any of them starts a new reference; a failed search keeps the last
+  valid capture with the same conditions, and the price screen says so.
 - **"Unavailable" is not "booked"**: it may be a booking, a host block or a stay restriction.
   Treat it as an approximation of occupancy.
 - **Outliers** are detected automatically (see above); when analysing the CSV files
@@ -380,58 +393,9 @@ is already handled by `details_refresh_days`). With `cron`, e.g. every 2 days at
 
 ## Architecture
 
-The project follows **Clean Architecture**: dependencies always point inwards, and the domain
-knows nothing about Airbnb, SQLite or the console.
-
-```
-src/airbnb_tracker/
-├── domain/            Pure business rules (no external dependencies)
-│   ├── value_objects.py   Money, StayPeriod, GeoPoint, BoundingBox, ListingId
-│   ├── entities.py        Listing, PriceQuote, ListingOffer, Snapshot
-│   ├── profile.py         ListingProfile, Amenity, CalendarSnapshot, AvailabilitySummary
-│   ├── specifications.py  Composable competitor filters (radius, bedrooms…)
-│   ├── market_analysis.py Percentiles, price position, discounts
-│   └── stay_planner.py    Check-in date × stay length combinations
-├── application/       Use cases and ports (interfaces)
-│   ├── ports.py           Gateways and repositories implemented by infrastructure
-│   ├── dto.py             Input and output objects
-│   └── use_cases/         scan_market, enrich_listings, build_market_report, export_dataset
-├── infrastructure/    Replaceable details
-│   ├── airbnb/            pyairbnb adapters and Airbnb payload translation
-│   ├── persistence/       SQLite and in-memory repositories
-│   ├── exporters/         Console, CSV and JSON
-│   ├── resilience.py      Request throttling and retries
-│   └── config.py          config.yaml loading and validation
-├── interface/
-│   ├── cli.py             Command-line interface
-│   └── web/               Streamlit UI: pages/, sidebar status, background jobs
-└── bootstrap.py       Composition root: wires everything together
-```
-
-**SOLID principles**
-
-| Principle | Where |
-|---|---|
-| Single responsibility | Each use case does one thing; mappers only translate Airbnb's format; exporters only format. |
-| Open/closed | New export formats or filters are added without modifying existing code. |
-| Liskov substitution | `SqliteRepository` and `InMemoryRepository` honour the same contract. |
-| Interface segregation | Separate ports for search, listing pages and calendars, and per repository. |
-| Dependency inversion | Use cases depend on `Protocol`s; `bootstrap.py` injects the implementations. |
-
-**Design patterns ([Refactoring Guru](https://refactoring.guru/design-patterns) catalogue)**
-
-| Pattern | Usage |
-|---|---|
-| Adapter | `PyAirbnb*Gateway` adapts pyairbnb to the application ports. |
-| Decorator | `Resilient*Gateway` adds throttling and retries to any gateway. |
-| Strategy + Factory Method | `DatasetExporterFactory` picks the CSV or JSON exporter. |
-| Composite / Specification | Competitor filters combine with `&` and `~`. |
-| Null Object | `AnyListing` accepts everything without conditionals. |
-
-Refactorings applied: *Replace Primitive with Object* (`Money`, `StayPeriod`), *Introduce
-Parameter Object* (`SearchFilters`, `SearchCriteria`, `DisplayedPrice`) and an
-anti-corruption layer that isolates Airbnb's payload shape in
-`infrastructure/airbnb/mappers.py`.
+Clean Architecture, SOLID and the patterns used, plus the decisions that keep the data
+trustworthy (price units, search conditions, search statuses), are documented in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Start there to pick up the context.
 
 ---
 

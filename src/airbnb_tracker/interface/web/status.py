@@ -13,6 +13,7 @@ from pathlib import Path
 import streamlit as st
 
 from airbnb_tracker.application.progress import Phase
+from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import config_path, settings_or_none
 from airbnb_tracker.interface.web.data import ago, database_version, last_update, sample_status
@@ -134,16 +135,17 @@ def _sample_badge(settings: AppSettings) -> None:
     version = database_version(settings)
     if version is None:
         return
-    searches, failed, truncated = sample_status(str(settings.storage.database_path), version)
+    key = Container(settings).search_conditions().key
+    searches, failed, partial = sample_status(str(settings.storage.database_path), version, key)
     if not searches:
         return
     if failed:
         text = t("Partial sample: {failed} of {searches} searches failed",
                  failed=failed, searches=searches)  # fmt: skip
         st.caption(f":orange[{text}]")
-    elif truncated:
-        text = t("Partial sample: Airbnb truncated {truncated} of {searches} searches",
-                 truncated=truncated, searches=searches)  # fmt: skip
+    elif partial:
+        text = t("Partial sample: {partial} of {searches} searches incomplete",
+                 partial=partial, searches=searches)  # fmt: skip
         st.caption(f":orange[{text}]")
     else:
         st.caption(f":green[{t('Complete sample: {searches} searches', searches=searches)}]")

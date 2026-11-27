@@ -23,8 +23,13 @@ class InMemoryRepository:
     def add(self, snapshot: Snapshot) -> None:
         self._snapshots.append(snapshot)
 
-    def latest(self, stay: StayPeriod) -> Snapshot | None:
-        matches = [s for s in self._snapshots if s.stay == stay]
+    def latest(self, stay: StayPeriod, conditions_key: str) -> Snapshot | None:
+        failed = {r.search_id for r in self._runs if not r.status.is_usable}
+        matches = [
+            s
+            for s in self._snapshots
+            if s.stay == stay and s.conditions_key == conditions_key and s.search_id not in failed
+        ]
         return max(matches, key=lambda s: s.captured_at, default=None)
 
     def all_snapshots(self) -> list[Snapshot]:

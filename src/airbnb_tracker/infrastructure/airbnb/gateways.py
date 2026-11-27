@@ -121,8 +121,11 @@ class PyAirbnbSearchGateway:
 
         mapper = SearchResultMapper(criteria.currency, criteria.filters.room_type)
         captured_at = self._clock.now()
-        offers = (mapper.to_offer(item, criteria.stay, captured_at) for item in raw.results)
-        return SearchResult([o for o in offers if o is not None], truncated=raw.truncated)
+        rows = list(raw.results)
+        offers = (mapper.to_offer(item, criteria.stay, captured_at) for item in rows)
+        return SearchResult(
+            [o for o in offers if o is not None], truncated=raw.truncated, received=len(rows)
+        )
 
     def _search_by_url(self, template_url: str, criteria: SearchCriteria) -> RawSearch:
         url = with_stay(template_url, criteria.stay, criteria.filters.guests)

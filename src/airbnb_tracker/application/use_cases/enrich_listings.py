@@ -41,6 +41,7 @@ class EnrichPart(StrEnum):
 @dataclass(frozen=True, slots=True)
 class EnrichCommand:
     stays: Sequence[StayPeriod]
+    conditions_key: str
     priority_ids: Sequence[ListingId] = ()
     center: GeoPoint | None = None
     parts: frozenset[EnrichPart] = field(default_factory=lambda: frozenset(EnrichPart))
@@ -123,7 +124,7 @@ class EnrichListingsUseCase:
         distances: dict[ListingId, float] = {}
         names: dict[ListingId, str] = {}
         for stay in command.stays:
-            snapshot = self._repos.snapshots.latest(stay)
+            snapshot = self._repos.snapshots.latest(stay, command.conditions_key)
             for offer in snapshot.offers if snapshot else ():
                 if command.property_groups and (
                     property_group(offer.listing.property_type) not in command.property_groups

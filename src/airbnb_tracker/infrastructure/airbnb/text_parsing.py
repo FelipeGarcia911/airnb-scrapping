@@ -4,46 +4,42 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
-from enum import Enum
 
-_CENTS = Decimal("0.01")
-_STAY_NIGHTS = re.compile(r"for\s+(\d+)\s+nights?", re.IGNORECASE)
+from airbnb_tracker.domain.price_reading import PriceUnit
+
+_STAY_NIGHTS = re.compile(r"\bfor\s+(\d+)\s+nights?\b")
+_UNIT_WORDS = (
+    (re.compile(r"\bmonth(?:ly)?\b"), PriceUnit.MONTH),
+    (re.compile(r"\bweek(?:ly)?\b"), PriceUnit.WEEK),
+    (re.compile(r"\b(?:per\s+)?night(?:ly)?\b"), PriceUnit.NIGHT),
+)
 _BEDROOMS = re.compile(r"(\d+)\s+bedrooms?\b")
 _BEDS = re.compile(r"(\d+)\s+(?:[a-z-]+\s+)?beds?\b")
 _BATHS = re.compile(r"(\d+(?:\.\d+)?)\s+(?:[a-z-]+\s+)?baths?\b")
 
 
-class PriceUnit(Enum):
-    """What a displayed amount covers, as stated by Airbnb's price qualifier."""
+@dataclass(frozen=True, slots=True)
+class Qualifier:
+    """The unit a price qualifier states, and the nights of "for N nights"."""
 
-    STAY = "stay"  # "for 3 nights"
-    NIGHT = "night"  # "night" / "per night"
-    WEEK = "week"  # "weekly" (average weekly price)
-    MONTH = "month"  # "monthly" (average monthly price, Airbnb uses 30-night months)
-
-    @property
-    def nights(self) -> int | None:
-        return {PriceUnit.NIGHT: 1, PriceUnit.WEEK: 7, PriceUnit.MONTH: 30}.get(self)
-
-    def to_stay_total(self, amount: Decimal, stay_nights: int) -> Decimal:
-        unit_nights = self.nights
-        if unit_nights is None:
-            return amount
-        return (amount * stay_nights / unit_nights).quantize(_CENTS, ROUND_HALF_UP)
+    unit: PriceUnit
+    stated_nights: int | None = None
 
 
-def parse_price_unit(text: str | None) -> PriceUnit:
-    lowered = (text or "").lower()
-    if _STAY_NIGHTS.search(lowered) or not lowered:
-        return PriceUnit.STAY
-    if "month" in lowered:
-        return PriceUnit.MONTH
-    if "week" in lowered:
-        return PriceUnit.WEEK
-    if "night" in lowered:
-        return PriceUnit.NIGHT
-    return PriceUnit.STAY
+def parse_qualifier(text: str | None) -> Qualifier:
+    """Read Airbnb's price qualifier (searches run in English).
+
+    Only explicit wording is trusted: a missing or unrecognised qualifier is
+    ``UNKNOWN``, never assumed to be a stay total.
+    """
+    lowered = (text or "").strip().lower()
+    stay = _STAY_NIGHTS.search(lowered)
+    if stay:
+        return Qualifier(PriceUnit.STAY, int(stay.group(1)))
+    for pattern, unit in _UNIT_WORDS:
+        if pattern.search(lowered):
+            return Qualifier(unit)
+    return Qualifier(PriceUnit.UNKNOWN)
 
 
 @dataclass(frozen=True, slots=True)

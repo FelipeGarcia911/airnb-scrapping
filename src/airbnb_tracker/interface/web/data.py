@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from airbnb_tracker.application.dto import ReportBundle
+from airbnb_tracker.application.dto import ReportBundle, SearchStatus
 from airbnb_tracker.application.use_cases import BuildReportQuery, ExportQuery, latest_run_stays
 from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.domain.outliers import OutlierPolicy, OutlierSensitivity
@@ -38,8 +38,9 @@ SENSITIVITY_KEY = "_outlier_sensitivity"
 class MarketData:
     """Three views of the same data:
 
-    * ``raw_tables``: exactly what was collected (downloads);
-    * ``comp_set_tables``: only comparable property kinds, outliers included (data quality);
+    * ``raw_tables``: exactly what was collected, every condition and status (downloads);
+    * ``comp_set_tables``: captures of the current search conditions from searches that
+      did not fail, comparable property kinds only, outliers included (data quality);
     * ``tables``: the comp set without price outliers when excluded (every analysis).
     """
 
@@ -47,6 +48,7 @@ class MarketData:
     tables: dict[str, pd.DataFrame]
     raw_tables: dict[str, pd.DataFrame]
     comp_set_tables: dict[str, pd.DataFrame]
+    conditions_key: str = ""
 
     @property
     def outlier_ids(self) -> set[str]:
@@ -121,17 +123,15 @@ def analysis_controls(settings: AppSettings | None) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def sample_status(database: str, db_version: float) -> tuple[int, int, int]:
-    """(searches, failed, truncated) of the latest search run."""
+def sample_status(database: str, db_version: float, conditions_key: str) -> tuple[int, int, int]:
+    """(searches, failed, partial) of the latest run under the current conditions."""
     del db_version  # cache key only
-    runs = SqliteRepository(database).all_runs()
+    runs = [r for r in SqliteRepository(database).all_runs() if r.conditions_key == conditions_key]
     if not runs:
         return 0, 0, 0
     latest = max(runs, key=lambda run: run.started_at).run_id
-    current = [run for run in runs if run.run_id == latest]
-    failed = sum(1 for run in current if run.error)
-    truncated = sum(1 for run in current if run.truncated)
-    return len(current), failed, truncated
+    current = [run.status for run in runs if run.run_id == latest]
+    return len(current), current.count(SearchStatus.FAILED), current.count(SearchStatus.PARTIAL)
 
 
 def load_market(settings: AppSettings, my_price: float | None) -> MarketData | None:
@@ -164,9 +164,11 @@ def _load(
     container = Container(settings)
     now = datetime.now(UTC)
     my_id = settings.my_listing.listing_id
+    key = container.search_conditions().key
     bundle = container.build_report.execute(
         BuildReportQuery(
-            stays=latest_run_stays(container.repository) or settings.stays.resolve(now.date()),
+            stays=latest_run_stays(container.repository, key) or settings.stays.resolve(now.date()),
+            conditions_key=key,
             my_listing_id=my_id,
             my_nightly_price=(
                 Money(Decimal(str(my_price)), settings.scraping.currency) if my_price else None
@@ -194,13 +196,30 @@ def _load(
         "reviews": pd.DataFrame(review_rows(dataset.reviews)),
         "search_runs": pd.DataFrame(search_run_rows(dataset.search_runs)),
     }
-    comp_set = _comp_set_tables(raw, settings.search.comp_set_groups)
+    comp_set = _comp_set_tables(_current_conditions(raw, key), settings.search.comp_set_groups)
     tables = dict(comp_set)
     flagged = {str(flag.listing_id) for flag in bundle.outliers}
     pricing = tables["pricing_snapshots"]
     if exclude_outliers and flagged and not pricing.empty:
         tables["pricing_snapshots"] = pricing[~pricing["listing_id"].isin(flagged)]
-    return MarketData(bundle=bundle, tables=tables, raw_tables=raw, comp_set_tables=comp_set)
+    return MarketData(bundle=bundle, tables=tables, raw_tables=raw, comp_set_tables=comp_set,
+                      conditions_key=key)  # fmt: skip
+
+
+def _current_conditions(raw: dict[str, pd.DataFrame], key: str) -> dict[str, pd.DataFrame]:
+    """Only captures made under the current search conditions, from searches that did
+    not fail. Exports keep everything (``raw_tables``)."""
+    tables = dict(raw)
+    runs = raw["search_runs"]
+    if not runs.empty:
+        runs = runs[runs["conditions_key"] == key]
+        tables["search_runs"] = runs
+    pricing = raw["pricing_snapshots"]
+    if not pricing.empty:
+        failed = set(runs.loc[runs["status"] == SearchStatus.FAILED.value, "search_id"])
+        usable = (pricing["conditions_key"] == key) & ~pricing["search_id"].isin(failed)
+        tables["pricing_snapshots"] = pricing[usable]
+    return tables
 
 
 def _comp_set_tables(

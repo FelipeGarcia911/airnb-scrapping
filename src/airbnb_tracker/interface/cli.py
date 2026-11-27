@@ -40,6 +40,7 @@ from airbnb_tracker.infrastructure.config import (
 )
 from airbnb_tracker.infrastructure.exporters import UnknownFormatError
 from airbnb_tracker.infrastructure.progress import progress_for_cli
+from airbnb_tracker.infrastructure.versions import collector_version
 
 CONFIG_ENV_VAR = "AIRBNB_TRACKER_CONFIG"
 EXPORT_FORMATS = ("csv", "json")
@@ -70,6 +71,8 @@ class TrackerCli:
                 complete_coverage=search.complete_coverage,
                 max_listings=search.max_listings,
                 competitor_filter=self._c.competitor_filter(),
+                conditions=self._c.search_conditions(),
+                collector_version=collector_version(),
             ),
             progress=self._progress,
         )
@@ -87,6 +90,7 @@ class TrackerCli:
         summary = self._c.enrich_listings.execute(
             EnrichCommand(
                 stays=self._collected_stays(),
+                conditions_key=self._c.search_conditions().key,
                 priority_ids=[my_id] if my_id else [],
                 center=settings.search.center,
                 parts=parts,
@@ -112,6 +116,7 @@ class TrackerCli:
         price = args.my_price if args.my_price is not None else settings.my_listing.nightly_price
         bundle = self._c.build_report.execute(
             BuildReportQuery(
+                conditions_key=self._c.search_conditions().key,
                 stays=self._collected_stays(),
                 my_listing_id=settings.my_listing.listing_id,
                 my_nightly_price=Money(price, settings.scraping.currency) if price else None,
@@ -147,7 +152,7 @@ class TrackerCli:
 
     def _collected_stays(self) -> list[StayPeriod]:
         """Stays of the latest search: reports must follow what was actually collected."""
-        return latest_run_stays(self._c.repository) or self._stays
+        return latest_run_stays(self._c.repository, self._c.search_conditions().key) or self._stays
 
     def _print(self, text: str) -> None:
         print(text, file=self._out, flush=True)

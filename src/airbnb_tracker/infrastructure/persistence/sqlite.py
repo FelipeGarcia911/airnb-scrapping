@@ -12,8 +12,22 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from airbnb_tracker.application.dto import SearchFilters, SearchRun
+from airbnb_tracker.application.dto import (
+    FailureKind,
+    RowCounts,
+    SearchFilters,
+    SearchRun,
+    SearchStatus,
+)
 from airbnb_tracker.domain.entities import Listing, ListingOffer, PriceQuote, RoomType, Snapshot
+from airbnb_tracker.domain.price_reading import (
+    DisplayedPrice,
+    Exclusion,
+    Normalisation,
+    PriceReading,
+    PriceUnit,
+    not_recorded,
+)
 from airbnb_tracker.domain.profile import (
     Amenity,
     CalendarDay,
@@ -92,18 +106,6 @@ CREATE TABLE IF NOT EXISTS calendar_days (
     PRIMARY KEY (calendar_id, day)
 );
 
-CREATE VIEW IF NOT EXISTS v_pricing AS
-SELECT o.listing_id, s.captured_at, s.check_in, s.check_out,
-       CAST(julianday(s.check_out) - julianday(s.check_in) AS INTEGER) AS nights,
-       s.guests, s.currency,
-       CAST(COALESCE(o.original_total, o.total) AS REAL) AS original_price,
-       CAST(o.total AS REAL) AS total_price,
-       ROUND(CAST(o.total AS REAL) / (julianday(s.check_out) - julianday(s.check_in)), 2)
-           AS nightly_price,
-       o.total IS NOT NULL AS is_available,
-       o.search_position
-FROM offers o JOIN snapshots s ON s.id = o.snapshot_id;
-
 CREATE TABLE IF NOT EXISTS reviews (
     review_id  TEXT PRIMARY KEY,
     listing_id TEXT NOT NULL,
@@ -147,11 +149,60 @@ SELECT c.listing_id, c.captured_at, d.day, d.available, d.min_nights
 FROM calendar_days d JOIN calendar_snapshots c ON c.id = d.calendar_id;
 """
 
+# Columns added after the first release: added in place, existing rows keep NULL there
+# (Expand-only migration: nothing is rewritten or deleted).
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "snapshots": {"search_id": "TEXT", "conditions_key": "TEXT"},
+    "offers": {
+        "price_unit": "TEXT",  # stay, night, week, month, unknown (NULL: not recorded)
+        "price_text": "TEXT",
+        "displayed_amount": "TEXT",
+        "displayed_original": "TEXT",
+        "stated_nights": "INTEGER",
+        "normalisation": "TEXT",
+        "excluded_reason": "TEXT",  # NULL when the price is comparable
+    },
+    "search_runs": {
+        "search_id": "TEXT",
+        "conditions_key": "TEXT",
+        "conditions": "TEXT",
+        "collector_version": "TEXT",
+        "status": "TEXT",
+        "failure": "TEXT",
+        "rows_received": "INTEGER",
+        "rows_parsed": "INTEGER",
+        "rows_priced": "INTEGER",
+        "rows_price_excluded": "INTEGER",
+    },
+}
+
+_VIEWS = """
+DROP VIEW IF EXISTS v_pricing;
+CREATE VIEW v_pricing AS
+SELECT o.listing_id, s.captured_at, s.check_in, s.check_out,
+       CAST(julianday(s.check_out) - julianday(s.check_in) AS INTEGER) AS nights,
+       s.guests, s.currency, s.search_id, s.conditions_key,
+       CAST(COALESCE(o.original_total, o.total) AS REAL) AS original_price,
+       CAST(o.total AS REAL) AS total_price,
+       ROUND(CAST(o.total AS REAL) / (julianday(s.check_out) - julianday(s.check_in)), 2)
+           AS nightly_price,
+       o.price_unit, o.price_text, CAST(o.displayed_amount AS REAL) AS displayed_amount,
+       o.normalisation,
+       CASE WHEN o.price_unit IS NULL AND o.total IS NOT NULL THEN 'not_recorded'
+            ELSE o.excluded_reason END AS excluded_reason,
+       (o.total IS NOT NULL OR o.displayed_amount IS NOT NULL) AS is_available,
+       o.search_position
+FROM offers o JOIN snapshots s ON s.id = o.snapshot_id;
+"""
+
 _LISTING_COLUMNS = (
     "listing_id", "name", "room_type", "property_type", "latitude", "longitude", "bedrooms",
     "beds", "bathrooms", "rating", "review_count", "is_guest_favorite", "photos",
 )  # fmt: skip
-_OFFER_COLUMNS = ("search_position", *_LISTING_COLUMNS, "total", "original_total")
+_SNAPSHOT_COLUMNS = ("captured_at", "check_in", "check_out", "currency", "guests",
+                     *_ADDED_COLUMNS["snapshots"])  # fmt: skip
+_PRICE_COLUMNS = ("total", "original_total", *_ADDED_COLUMNS["offers"])
+_OFFER_COLUMNS = ("search_position", *_LISTING_COLUMNS, *_PRICE_COLUMNS)
 _PROFILE_COLUMNS = ("captured_at", *_LISTING_COLUMNS, "description", "person_capacity",
                     "is_superhost")  # fmt: skip
 
@@ -167,19 +218,33 @@ class SqliteRepository:
         self._shared_connection = self._open() if in_memory else None
         with self._connection() as connection:
             connection.executescript(_SCHEMA)
+            _add_missing_columns(connection)
+            connection.executescript(_VIEWS)
 
     # --- pricing snapshots --------------------------------------------------------------
     def add(self, snapshot: Snapshot) -> None:
         with self._connection() as connection:
             cursor = connection.execute(
-                "INSERT INTO snapshots (captured_at, check_in, check_out, currency, guests) "
-                "VALUES (?, ?, ?, ?, ?)",
+                _insert(
+                    "snapshots",
+                    (
+                        "captured_at",
+                        "check_in",
+                        "check_out",
+                        "currency",
+                        "guests",
+                        "search_id",
+                        "conditions_key",
+                    ),
+                ),
                 (
                     snapshot.captured_at.isoformat(),
                     snapshot.stay.check_in.isoformat(),
                     snapshot.stay.check_out.isoformat(),
                     snapshot.currency,
                     snapshot.guests,
+                    snapshot.search_id,
+                    snapshot.conditions_key,
                 ),
             )
             rows = [
@@ -188,12 +253,16 @@ class SqliteRepository:
             ]
             connection.executemany(_insert("offers", ("snapshot_id", *_OFFER_COLUMNS)), rows)
 
-    def latest(self, stay: StayPeriod) -> Snapshot | None:
+    def latest(self, stay: StayPeriod, conditions_key: str) -> Snapshot | None:
+        """Most recent capture of ``stay`` under these conditions from a usable search."""
         with self._connection() as connection:
             header = connection.execute(
-                "SELECT * FROM snapshots WHERE check_in = ? AND check_out = ? "
-                "ORDER BY captured_at DESC, id DESC LIMIT 1",
-                (stay.check_in.isoformat(), stay.check_out.isoformat()),
+                "SELECT s.* FROM snapshots s "
+                "LEFT JOIN search_runs r ON r.search_id = s.search_id "
+                "WHERE s.check_in = ? AND s.check_out = ? AND s.conditions_key = ? "
+                "AND COALESCE(r.status, '') <> 'failed' "
+                "ORDER BY s.captured_at DESC, s.id DESC LIMIT 1",
+                (stay.check_in.isoformat(), stay.check_out.isoformat(), conditions_key),
             ).fetchone()
             return self._load_snapshot(connection, header) if header else None
 
@@ -212,7 +281,15 @@ class SqliteRepository:
             "SELECT * FROM offers WHERE snapshot_id = ? ORDER BY search_position", (header["id"],)
         ).fetchall()
         offers = tuple(_row_to_offer(r, stay, header["currency"], captured_at) for r in rows)
-        return Snapshot(captured_at, stay, header["currency"], header["guests"], offers)
+        return Snapshot(
+            captured_at,
+            stay,
+            header["currency"],
+            header["guests"],
+            offers,
+            search_id=header["search_id"],
+            conditions_key=header["conditions_key"],
+        )
 
     # --- listing profiles ---------------------------------------------------------------
     def save_profile(self, profile: ListingProfile) -> None:
@@ -360,10 +437,20 @@ class SqliteRepository:
             "radius_km": run.radius_km,
             "url": run.url,
             "complete_coverage": int(run.complete_coverage),
-            "results_found": run.results_found,
-            "results_kept": run.results_kept,
+            "results_found": run.counts.parsed,
+            "results_kept": run.counts.kept,
             "truncated": int(run.truncated),
             "error": run.error,
+            "search_id": run.search_id,
+            "conditions_key": run.conditions_key,
+            "conditions": run.conditions,
+            "collector_version": run.collector_version,
+            "status": run.status.value,
+            "failure": run.failure.value if run.failure else None,
+            "rows_received": run.counts.received,
+            "rows_parsed": run.counts.parsed,
+            "rows_priced": run.counts.priced,
+            "rows_price_excluded": run.counts.price_excluded,
         }
         with self._connection() as connection:
             connection.execute(_insert("search_runs", tuple(values)), tuple(values.values()))
@@ -426,10 +513,25 @@ def _listing_values(listing: Listing) -> tuple[object, ...]:
 
 
 def _quote_values(offer: ListingOffer) -> tuple[object, ...]:
+    """Comparable totals (if any) plus how the displayed price was read."""
     quote = offer.quote
-    return (
+    reading = quote.reading if quote else offer.rejected
+    totals = (
         str(quote.total.amount) if quote else None,
         str(quote.original_total.amount) if quote and quote.original_total else None,
+    )
+    if reading is None:
+        return (*totals, None, None, None, None, None, None, None)
+    shown = reading.displayed
+    return (
+        *totals,
+        shown.unit.value,
+        shown.text,
+        _opt_str(shown.amount),
+        _opt_str(shown.original_amount),
+        shown.stated_nights,
+        reading.normalisation.value,
+        reading.exclusion.value if reading.exclusion else None,
     )
 
 
@@ -455,8 +557,13 @@ def _row_to_offer(
     row: sqlite3.Row, stay: StayPeriod, currency: str, captured_at: datetime
 ) -> ListingOffer:
     listing = _row_to_listing(row)
-    if row["total"] is None:
-        return ListingOffer(listing)
+    if row["price_unit"] is None:  # captured before units were recorded
+        if row["total"] is None:
+            return ListingOffer(listing)
+        return ListingOffer(listing, rejected=not_recorded(Decimal(row["total"]), currency))
+    reading = _row_to_reading(row, currency)
+    if reading.exclusion is not None or row["total"] is None:
+        return ListingOffer(listing, rejected=reading)
     original = row["original_total"]
     quote = PriceQuote(
         listing_id=listing.id,
@@ -464,8 +571,36 @@ def _row_to_offer(
         total=Money(Decimal(row["total"]), currency),
         original_total=Money(Decimal(original), currency) if original else None,
         captured_at=captured_at,
+        reading=reading,
     )
     return ListingOffer(listing, quote)
+
+
+def _row_to_reading(row: sqlite3.Row, currency: str) -> PriceReading:
+    displayed = DisplayedPrice(
+        amount=_opt_decimal(row["displayed_amount"]),
+        original_amount=_opt_decimal(row["displayed_original"]),
+        currency=currency,
+        text=row["price_text"] or "",
+        unit=PriceUnit(row["price_unit"]),
+        stated_nights=_opt_int(row["stated_nights"]),
+    )
+    exclusion = row["excluded_reason"]
+    return PriceReading(
+        displayed,
+        Normalisation(row["normalisation"] or Normalisation.NONE),
+        total=_opt_decimal(row["total"]),
+        original_total=_opt_decimal(row["original_total"]),
+        exclusion=Exclusion(exclusion) if exclusion else None,
+    )
+
+
+def _add_missing_columns(connection: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {r["name"] for r in connection.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns.items():
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
 
 
 def _filters_to_dict(filters: SearchFilters) -> dict[str, object]:
@@ -490,11 +625,41 @@ def _row_to_run(row: sqlite3.Row) -> SearchRun:
         radius_km=_opt_float(row["radius_km"]),
         url=row["url"],
         complete_coverage=bool(row["complete_coverage"]),
-        results_found=row["results_found"],
-        results_kept=row["results_kept"],
+        counts=RowCounts(
+            received=_first(row["rows_received"], row["results_found"]),
+            parsed=_first(row["rows_parsed"], row["results_found"]),
+            kept=row["results_kept"],
+            priced=row["rows_priced"] or 0,
+            price_excluded=row["rows_price_excluded"] or 0,
+        ),
+        status=SearchStatus(row["status"]) if row["status"] else _older_run_status(row),
         truncated=bool(row["truncated"]),
         error=row["error"],
+        failure=FailureKind(row["failure"]) if row["failure"] else None,
+        search_id=row["search_id"],
+        conditions_key=row["conditions_key"],
+        conditions=row["conditions"],
+        collector_version=row["collector_version"],
     )
+
+
+def _older_run_status(row: sqlite3.Row) -> SearchStatus:
+    """Runs stored before statuses were recorded."""
+    if row["error"]:
+        return SearchStatus.FAILED
+    return SearchStatus.PARTIAL if row["truncated"] else SearchStatus.COMPLETE
+
+
+def _first(value: object, fallback: object) -> int:
+    return int(str(value if value is not None else fallback))
+
+
+def _opt_str(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _opt_decimal(value: object) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
 
 
 def _opt_int(value: object) -> int | None:

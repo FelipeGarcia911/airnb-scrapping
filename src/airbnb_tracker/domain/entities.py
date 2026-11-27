@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from airbnb_tracker.domain.exceptions import InvalidValueError
+from airbnb_tracker.domain.price_reading import PriceReading
 from airbnb_tracker.domain.value_objects import GeoPoint, ListingId, Money, StayPeriod
 
 
@@ -49,13 +50,18 @@ class Listing:
 
 @dataclass(frozen=True, slots=True)
 class PriceQuote:
-    """Price a guest would pay for ``stay`` at the moment it was captured."""
+    """Price a guest would pay for ``stay`` at the moment it was captured.
+
+    Only comparable prices become quotes; ``reading`` records what Airbnb showed and how
+    it was normalised into ``total``.
+    """
 
     listing_id: ListingId
     stay: StayPeriod
     total: Money
     captured_at: datetime
     original_total: Money | None = None
+    reading: PriceReading | None = None
 
     def __post_init__(self) -> None:
         if self.original_total and self.original_total.currency != self.total.currency:
@@ -74,18 +80,28 @@ class PriceQuote:
 
 @dataclass(frozen=True, slots=True)
 class ListingOffer:
-    """A listing together with its quote for a stay (``quote=None`` means unavailable)."""
+    """A listing together with its price for a stay.
+
+    ``quote`` holds a comparable price. ``rejected`` holds a price that was shown but
+    could not be interpreted (unknown unit...): the listing is available, yet the price
+    stays out of every statistic. Neither means no price was shown (unavailable).
+    """
 
     listing: Listing
     quote: PriceQuote | None = None
+    rejected: PriceReading | None = None
 
     def __post_init__(self) -> None:
         if self.quote and self.quote.listing_id != self.listing.id:
             raise InvalidValueError("quote belongs to a different listing")
+        if self.quote and self.rejected:
+            raise InvalidValueError("an offer has either a comparable or a rejected price")
+        if self.rejected and self.rejected.is_comparable:
+            raise InvalidValueError("a rejected price must carry its exclusion reason")
 
     @property
     def is_available(self) -> bool:
-        return self.quote is not None
+        return self.quote is not None or self.rejected is not None
 
     @property
     def nightly_price(self) -> Money | None:
@@ -104,6 +120,8 @@ class Snapshot:
     currency: str
     guests: int
     offers: tuple[ListingOffer, ...]
+    search_id: str | None = None  # None: captured before searches were linked
+    conditions_key: str | None = None
 
     def __post_init__(self) -> None:
         if self.guests < 1:

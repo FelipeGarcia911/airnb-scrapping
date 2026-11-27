@@ -13,6 +13,7 @@ import csv
 import json
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -59,11 +60,19 @@ def listing_rows(records: Sequence[ListingRecord]) -> Iterator[dict[str, Any]]:
 
 
 def pricing_rows(snapshots: Sequence[Snapshot]) -> Iterator[dict[str, Any]]:
-    """``total_price`` is the stay price after discounts, before cleaning fee and taxes."""
+    """``total_price`` is the stay price after discounts, before cleaning fee and taxes.
+
+    Prices that could not be interpreted keep ``total_price`` empty; what Airbnb showed
+    and why it was excluded are in ``displayed_amount``, ``price_text`` and
+    ``excluded_reason``.
+    """
     for snapshot in snapshots:
         for position, offer in enumerate(snapshot.offers, start=1):
             quote = offer.quote
+            reading = quote.reading if quote else offer.rejected
             yield {
+                "search_id": snapshot.search_id,
+                "conditions_key": snapshot.conditions_key,
                 "listing_id": str(offer.listing.id),
                 "collected_at": snapshot.captured_at.isoformat(),
                 "check_in": snapshot.stay.check_in.isoformat(),
@@ -79,6 +88,13 @@ def pricing_rows(snapshots: Sequence[Snapshot]) -> Iterator[dict[str, Any]]:
                 ),
                 "is_available": offer.is_available,
                 "search_position": position,
+                "displayed_amount": _decimal(reading.displayed.amount if reading else None),
+                "price_unit": reading.displayed.unit.value if reading else None,
+                "price_text": reading.displayed.text if reading else None,
+                "normalisation": reading.normalisation.value if reading else None,
+                "excluded_reason": (
+                    reading.exclusion.value if reading and reading.exclusion else None
+                ),
             }
 
 
@@ -128,11 +144,24 @@ def search_run_rows(runs: Sequence[SearchRun]) -> Iterator[dict[str, Any]]:
             "radius_km": run.radius_km,
             "url": run.url,
             "complete_coverage": run.complete_coverage,
-            "results_found": run.results_found,
-            "results_kept": run.results_kept,
             "truncated": run.truncated,
             "error": run.error,
+            "search_id": run.search_id,
+            "conditions_key": run.conditions_key,
+            "conditions": run.conditions,
+            "collector_version": run.collector_version,
+            "status": run.status.value,
+            "failure": run.failure.value if run.failure else None,
+            "rows_received": run.counts.received,
+            "rows_parsed": run.counts.parsed,
+            "rows_kept": run.counts.kept,
+            "rows_priced": run.counts.priced,
+            "rows_price_excluded": run.counts.price_excluded,
         }
+
+
+def _decimal(value: Decimal | None) -> float | None:
+    return None if value is None else float(value)
 
 
 def _tables(dataset: Dataset) -> Mapping[str, Iterator[dict[str, Any]]]:

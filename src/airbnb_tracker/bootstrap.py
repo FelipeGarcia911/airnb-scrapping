@@ -6,9 +6,11 @@ so swapping pyairbnb, SQLite or an exporter never touches business code.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from functools import cached_property
-from typing import TextIO
+from typing import Any, TextIO
 
+from airbnb_tracker.application.dto import SearchConditions
 from airbnb_tracker.application.ports import (
     CalendarGateway,
     Clock,
@@ -159,6 +161,28 @@ class Container:
         if search.property_groups:
             spec = spec & InPropertyGroups(search.property_groups)
         return spec
+
+    def search_conditions(self) -> SearchConditions:
+        """The conditions every capture of this profile is stored and compared under."""
+        search = self.settings.search
+        filters: dict[str, Any] = {
+            **asdict(search.filters),
+            "max_bedrooms": search.max_bedrooms,
+            "min_rating": search.min_rating,
+            "exclude_ids": [str(i) for i in search.exclude_ids] or None,
+            "property_groups": list(search.property_groups or ()) or None,
+        }
+        filters.pop("guests")
+        return SearchConditions.build(
+            guests=search.filters.guests,
+            currency=self.settings.scraping.currency,
+            center=search.center,
+            radius_km=search.radius_km,
+            url=search.url,
+            filters=filters,
+            kept_listings=search.max_listings,
+            complete_coverage=search.complete_coverage,
+        )
 
     # --- use cases ------------------------------------------------------------------
     @cached_property

@@ -507,7 +507,7 @@ def deep_discounts(pricing: pd.DataFrame, listings: pd.DataFrame, min_pct: float
     latest = latest_pricing(pricing)
     deep = latest[latest["discount_pct"].fillna(0) >= min_pct]
     if deep.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["listing_id"])
     deep = (
         deep.sort_values("discount_pct", ascending=False)
         .drop_duplicates(["listing_id", "nights"])
@@ -565,6 +565,7 @@ def benchmarks_by_check_in(
             "p75": grouped["nightly_price"].quantile(0.75),
             "comparables": grouped["listing_id"].nunique(),
             "captured": grouped["collected_at"].max(),
+            "search_id": grouped["search_id"].first(),
         }
     )
     dates = sorted(set(check_ins) | set(table.index))
@@ -578,3 +579,14 @@ def searched_check_ins(search_runs: pd.DataFrame, nights: int) -> list[str]:
     latest_run = search_runs.sort_values("started_at")["run_id"].iloc[-1]
     runs = search_runs[(search_runs["run_id"] == latest_run) & (search_runs["nights"] == nights)]
     return sorted(runs["check_in"].unique())
+
+
+def latest_attempts(search_runs: pd.DataFrame, nights: int) -> pd.DataFrame:
+    """Most recent search of every check-in for one stay length: its status and time."""
+    if search_runs.empty:
+        return pd.DataFrame(columns=["check_in", "attempt_status", "attempted_at"])
+    runs = search_runs[search_runs["nights"] == nights].sort_values("started_at")
+    last = runs.groupby("check_in").tail(1)
+    return last.rename(columns={"status": "attempt_status", "started_at": "attempted_at"})[
+        ["check_in", "attempt_status", "attempted_at"]
+    ]

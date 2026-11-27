@@ -23,6 +23,7 @@ from airbnb_tracker.domain.value_objects import ListingId, Money, StayPeriod
 @dataclass(frozen=True, slots=True)
 class BuildReportQuery:
     stays: Sequence[StayPeriod]
+    conditions_key: str
     my_listing_id: ListingId | None = None
     my_nightly_price: Money | None = None
     availability_window_days: int = 60
@@ -45,7 +46,8 @@ class BuildMarketReportUseCase:
         self._analyzer = analyzer or MarketAnalyzer()
 
     def execute(self, query: BuildReportQuery) -> ReportBundle:
-        latest = [s for s in map(self._snapshots.latest, query.stays) if s is not None]
+        found = (self._snapshots.latest(stay, query.conditions_key) for stay in query.stays)
+        latest = [snapshot for snapshot in found if snapshot is not None]
         latest = comparable_only(latest, query.property_groups, keep=query.my_listing_id)
         outliers = detect_price_outliers(latest, PriceOutlierDetector(query.outlier_policy))
         if query.exclude_outliers and outliers:

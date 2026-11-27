@@ -1,7 +1,9 @@
 """Use case: search the listings that match your filters and store what they charge.
 
-Every search, successful or not, is also recorded as a ``SearchRun`` so the coverage
-of each query (results found, kept, truncated by Airbnb) can be audited later.
+Every search, successful or not, is recorded as a ``SearchRun`` with its conditions,
+status (complete, partial, empty, failed) and row counts, and linked to the snapshot it
+produced. A failed search stores no usable prices, so the last valid capture with the
+same conditions keeps serving as the reference.
 """
 
 from __future__ import annotations
@@ -12,7 +14,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
-from airbnb_tracker.application.dto import SearchCriteria, SearchFilters, SearchResult, SearchRun
+from airbnb_tracker.application.dto import (
+    FailureKind,
+    RowCounts,
+    SearchConditions,
+    SearchCriteria,
+    SearchFilters,
+    SearchResult,
+    SearchRun,
+    SearchStatus,
+    classify_search,
+)
 from airbnb_tracker.application.exceptions import GatewayError
 from airbnb_tracker.application.ports import (
     Clock,
@@ -34,6 +46,7 @@ class ScanMarketCommand:
 
     stays: Sequence[StayPeriod]
     currency: str
+    conditions: SearchConditions
     filters: SearchFilters = field(default_factory=SearchFilters)
     center: GeoPoint | None = None
     radius_km: float = 1.0
@@ -41,6 +54,7 @@ class ScanMarketCommand:
     complete_coverage: bool = True
     max_listings: int | None = None  # keep only the N nearest (or top-ranked in URL mode)
     competitor_filter: ListingSpecification = field(default_factory=AnyListing)
+    collector_version: str | None = None
 
     def __post_init__(self) -> None:
         if self.center is None and self.template_url is None:
@@ -50,10 +64,12 @@ class ScanMarketCommand:
 @dataclass(frozen=True, slots=True)
 class ScanSummary:
     stay: StayPeriod
-    found: int
-    kept: int
+    counts: RowCounts
+    status: SearchStatus
+    failure: FailureKind | None = None
     truncated: bool = False
     error: str | None = None
+    search_id: str | None = None
 
 
 class ScanMarketUseCase:
@@ -109,6 +125,7 @@ class ScanMarketUseCase:
         is_competitor: ListingSpecification,
     ) -> ScanSummary:
         started_at = self._clock.now()
+        search_id = self._id_factory()
         criteria = SearchCriteria(
             stay=stay,
             currency=command.currency,
@@ -120,7 +137,9 @@ class ScanMarketUseCase:
             result = self._gateway.search(criteria)
         except GatewayError as error:
             logger.warning("Market scan failed for %s: %s", stay, error)
-            summary = ScanSummary(stay, found=0, kept=0, error=str(error))
+            status, failure = classify_search(RowCounts(), truncated=False, error=str(error))
+            summary = ScanSummary(stay, RowCounts(), status, failure, error=str(error),
+                                  search_id=search_id)  # fmt: skip
             self._record(run_id, command, started_at, summary)
             return summary
 
@@ -133,9 +152,11 @@ class ScanMarketUseCase:
                 currency=command.currency,
                 guests=command.filters.guests,
                 offers=tuple(competitors),
+                search_id=search_id,
+                conditions_key=command.conditions.key,
             )
         )
-        summary = _summary(stay, result, len(competitors))
+        summary = _summary(stay, result, competitors, search_id)
         self._record(run_id, command, started_at, summary)
         return summary
 
@@ -160,10 +181,15 @@ class ScanMarketUseCase:
                 radius_km=None if url_mode else command.radius_km,
                 url=command.template_url,
                 complete_coverage=command.complete_coverage and not url_mode,
-                results_found=summary.found,
-                results_kept=summary.kept,
+                counts=summary.counts,
+                status=summary.status,
                 truncated=summary.truncated,
                 error=summary.error,
+                search_id=summary.search_id,
+                conditions_key=command.conditions.key,
+                conditions=command.conditions.to_json(),
+                collector_version=command.collector_version,
+                failure=summary.failure,
             )
         )
 
@@ -175,14 +201,31 @@ def describe(stay: StayPeriod) -> str:
 
 
 def _outcome(summary: ScanSummary) -> str:
-    if summary.error:
-        return f"{describe(summary.stay)}: failed ({summary.error})"
-    note = " (Airbnb truncated the results)" if summary.truncated else ""
-    return f"{describe(summary.stay)}: {summary.kept} listings{note}"
+    where = describe(summary.stay)
+    if summary.status is SearchStatus.FAILED:
+        reason = summary.error or (summary.failure.value if summary.failure else "")
+        return f"{where}: failed ({reason}), the previous capture is kept"
+    if summary.status is SearchStatus.EMPTY:
+        return f"{where}: no listings returned"
+    counts = summary.counts
+    note = " (partial)" if summary.status is SearchStatus.PARTIAL else ""
+    excluded = f", {counts.price_excluded} prices not interpreted" if counts.price_excluded else ""
+    return f"{where}: {counts.kept} listings, {counts.priced} priced{excluded}{note}"
 
 
-def _summary(stay: StayPeriod, result: SearchResult, kept: int) -> ScanSummary:
-    return ScanSummary(stay, found=len(result.offers), kept=kept, truncated=result.truncated)
+def _summary(
+    stay: StayPeriod, result: SearchResult, kept: list[ListingOffer], search_id: str
+) -> ScanSummary:
+    counts = RowCounts(
+        received=result.rows_received,
+        parsed=len(result.offers),
+        kept=len(kept),
+        priced=sum(1 for offer in kept if offer.quote is not None),
+        price_excluded=sum(1 for offer in kept if offer.rejected is not None),
+    )
+    status, failure = classify_search(counts, truncated=result.truncated)
+    return ScanSummary(stay, counts, status, failure, truncated=result.truncated,
+                       search_id=search_id)  # fmt: skip
 
 
 def _nearest(
