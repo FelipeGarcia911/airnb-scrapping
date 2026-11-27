@@ -33,7 +33,11 @@ from airbnb_tracker.application.use_cases import (
 from airbnb_tracker.bootstrap import Container
 from airbnb_tracker.domain.exceptions import DomainError
 from airbnb_tracker.domain.value_objects import Money, StayPeriod
-from airbnb_tracker.infrastructure.config import ConfigurationError, load_settings
+from airbnb_tracker.infrastructure.config import (
+    ConfigurationError,
+    load_settings,
+    read_raw_config,
+)
 from airbnb_tracker.infrastructure.exporters import UnknownFormatError
 from airbnb_tracker.infrastructure.progress import progress_for_cli
 
@@ -219,9 +223,15 @@ def main(argv: Sequence[str] | None = None, out: TextIO = sys.stdout) -> int:
 def launch_ui(config: Path) -> int:
     """Start the Streamlit app; it does not need a valid config to open."""
     app = Path(__file__).parent / "web" / "app.py"
-    from airbnb_tracker.interface.web.theme import streamlit_flags  # noqa: PLC0415 - UI-only import
+    from airbnb_tracker.interface.web.preferences import Preferences  # noqa: PLC0415 - UI-only
+    from airbnb_tracker.interface.web.theme import streamlit_flags  # noqa: PLC0415 - UI-only
 
-    command = [sys.executable, "-m", "streamlit", "run", str(app), *streamlit_flags(),
+    try:
+        section = read_raw_config(config).get("ui")
+    except ConfigurationError:
+        section = None
+    theme = Preferences.from_raw(section if isinstance(section, dict) else {}).theme
+    command = [sys.executable, "-m", "streamlit", "run", str(app), *streamlit_flags(theme),
                "--", "--config", str(config.resolve())]  # fmt: skip
     return subprocess.call(command)
 

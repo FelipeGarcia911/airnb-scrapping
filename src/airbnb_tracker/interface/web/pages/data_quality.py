@@ -12,24 +12,27 @@ from airbnb_tracker.interface.web.components import caveat, how_to_read, insight
 from airbnb_tracker.interface.web.data import analysis_controls
 from airbnb_tracker.interface.web.formatting import format_money
 from airbnb_tracker.interface.web.guards import require_data, require_settings
+from airbnb_tracker.interface.web.i18n import t
 from airbnb_tracker.interface.web.theme import CORAL, MUTED
 
 DEEP_DISCOUNT_PCT = 40
 
 
 def render() -> None:
-    st.title("Data quality")
-    st.caption("Data & settings")
+    st.title(t("Data quality"))
+    st.caption(t("Setup & data"))
     st.markdown(
-        "Some listings show prices nobody would pay (a host blocking dates with a huge "
-        "price, a long-term rental) and a few sit far outside their segment. They are "
-        "detected automatically and left out of the statistics, without deleting anything."
+        t(
+            "Some listings show prices nobody would pay (a host blocking dates with a huge "
+            "price, a long-term rental) and a few sit far outside their segment. They are "
+            "detected automatically and left out of the statistics, without deleting anything."
+        )
     )
     settings = require_settings()
     if settings is None:
         return
     with st.container(border=True):
-        st.markdown("**Analysis settings** · apply to every page")
+        st.markdown(f"**{t('Analysis settings')}** · {t('apply to every page')}")
         analysis_controls(settings)
     data = require_data(settings)
     if data is None:
@@ -41,12 +44,13 @@ def render() -> None:
     deep = analytics.deep_discounts(raw_pricing, listings, DEEP_DISCOUNT_PCT)
     priced = analytics.latest_pricing(raw_pricing)["listing_id"].nunique()
     c1, c2, c3 = st.columns(3)
-    c1.metric("Comp set listings priced", priced,
-              help="Comparable property kinds only (see step 1), outliers included.")  # fmt: skip
-    c2.metric("Price outliers", len(flags),
-              help="Left out of the statistics while the sidebar switch is on.")  # fmt: skip
-    c3.metric(f"Deep discounts (≥{DEEP_DISCOUNT_PCT}%)", deep["listing_id"].nunique(),
-              help="Real, aggressive prices: kept in the statistics.")  # fmt: skip
+    c1.metric(t("Comp set listings priced"), priced,
+              help=t("Comparable property kinds only (see step 1), outliers included."),
+              )  # fmt: skip
+    c2.metric(t("Price outliers"), len(flags),
+              help=t("Left out of the statistics while the analysis switch is on."))  # fmt: skip
+    c3.metric(t("Deep discounts (≥{pct}%)", pct=DEEP_DISCOUNT_PCT), deep["listing_id"].nunique(),
+              help=t("Real, aggressive prices: kept in the statistics."))  # fmt: skip
 
     _outliers(flags, listings, currency, data.bundle.outliers_excluded)
     _distribution(raw_pricing, listings, data.outlier_ids, currency)
@@ -58,12 +62,14 @@ def _outliers(
     flags: tuple[OutlierFlag, ...], listings: pd.DataFrame, currency: str, excluded: bool
 ) -> None:
     section(
-        "Price outliers",
-        "Each listing is judged on the median of its prices, against listings with the same "
-        "number of bedrooms.",
+        t("Price outliers"),
+        t(
+            "Each listing is judged on the median of its prices, against listings with the "
+            "same number of bedrooms."
+        ),
     )
     if not flags:
-        insight("No price outliers in the latest data: every price looks plausible.")
+        insight(t("No price outliers in the latest data: every price looks plausible."))
         return
     info = {str(record["listing_id"]): record for record in listings.to_dict("records")}
     rows = []
@@ -72,13 +78,13 @@ def _outliers(
         row = info.get(listing_id)
         rows.append(
             {
-                "Listing": row["title"] if row is not None else listing_id,
-                "Why": flag.reason.label,
-                "Typical nightly": round(flag.nightly),
-                "Segment": flag.segment,
-                "Segment median": round(flag.segment_median),
-                "Times the median": round(flag.ratio, 1),
-                "Reviews": analytics.as_float(row["review_count"]) if row is not None else None,
+                t("Listing"): row["title"] if row is not None else listing_id,
+                t("Why"): t(flag.reason.label),
+                t("Typical nightly"): round(flag.nightly),
+                t("Segment"): _segment(flag.segment),
+                t("Segment median"): round(flag.segment_median),
+                t("Times the median"): round(flag.ratio, 1),
+                t("Reviews"): analytics.as_float(row["review_count"]) if row is not None else None,
                 "Airbnb": row["url"] if row is not None else None,
             }
         )
@@ -88,28 +94,44 @@ def _outliers(
         hide_index=True,
         width="stretch",
         column_config={
-            "Typical nightly": amount,
-            "Segment median": amount,
-            "Times the median": st.column_config.NumberColumn(format="%.1f×"),
-            "Airbnb": st.column_config.LinkColumn(display_text="Open"),
+            t("Typical nightly"): amount,
+            t("Segment median"): amount,
+            t("Times the median"): st.column_config.NumberColumn(format="%.1f×"),
+            "Airbnb": st.column_config.LinkColumn(display_text=t("Open")),
         },
     )
     worst = max(flags, key=lambda f: f.ratio)
-    state = "left out of" if excluded else "currently included in"
-    insight(
-        f"**{len(flags)}** listing{'s' if len(flags) != 1 else ''} {state} the statistics. "
-        f"The most extreme asks **{format_money(worst.nightly, currency)}** per night, "
-        f"**{worst.ratio:.0f}×** the median of its segment ({worst.segment})."
+    if excluded:
+        count = (
+            t("**1** listing left out of the statistics.")
+            if len(flags) == 1
+            else t("**{count}** listings left out of the statistics.", count=len(flags))
+        )
+    else:
+        count = (
+            t("**1** listing currently included in the statistics.")
+            if len(flags) == 1
+            else t("**{count}** listings currently included in the statistics.", count=len(flags))
+        )
+    extreme = t(
+        "The most extreme asks **{price}** per night, **{ratio}×** the median of its "
+        "segment ({segment}).",
+        price=format_money(worst.nightly, currency),
+        ratio=f"{worst.ratio:.0f}",
+        segment=_segment(worst.segment),
     )
+    insight(f"{count} {extreme}")  # fmt: skip
 
 
 def _distribution(
     pricing: pd.DataFrame, listings: pd.DataFrame, flagged: set[str], currency: str
 ) -> None:
     section(
-        "How prices are distributed",
-        "Typical nightly price of every listing by segment, on a logarithmic scale so that "
-        "both ends are visible. Outliers in coral.",
+        t("How prices are distributed"),
+        t(
+            "Typical nightly price of every listing by segment, on a logarithmic scale so "
+            "that both ends are visible. Outliers in coral."
+        ),
     )
     latest = analytics.latest_pricing(pricing)
     if latest.empty:
@@ -118,77 +140,106 @@ def _distribution(
     frame = listings.set_index("listing_id")[["title", "bedrooms"]].join(per_listing, how="inner")
     frame = frame.reset_index()
     frame["Segment"] = frame["bedrooms"].map(
-        lambda b: "unknown size" if pd.isna(b) else f"{int(b)} bedrooms"
+        lambda b: t("unknown size") if pd.isna(b) else t("{count} bedrooms", count=int(b))
     )
-    frame["Status"] = frame["listing_id"].map(lambda i: "Outlier" if i in flagged else "Kept")
+    outlier, kept = t("Outlier"), t("Kept")
+    frame["Status"] = frame["listing_id"].map(lambda i: outlier if i in flagged else kept)
     chart = (
         alt.Chart(frame)
         .mark_tick(thickness=2, size=22)
         .encode(
-            x=alt.X("nightly:Q", title=f"Typical nightly price ({currency}, log scale)",
-                    scale=alt.Scale(type="log")),
+            x=alt.X("nightly:Q", scale=alt.Scale(type="log"),
+                    title=t("Typical nightly price ({currency}, log scale)", currency=currency)),
             y=alt.Y("Segment:N", title=None),
-            color=alt.Color("Status:N", scale=alt.Scale(domain=["Kept", "Outlier"],
-                            range=[MUTED, CORAL])),
-            tooltip=["title", "Segment", alt.Tooltip("nightly:Q", format=",.0f"), "Status"],
+            color=alt.Color("Status:N", title=t("Status"),
+                            scale=alt.Scale(domain=[kept, outlier], range=[MUTED, CORAL])),
+            tooltip=[alt.Tooltip("title:N", title=t("Listing")),
+                     alt.Tooltip("Segment:N", title=t("Segment")),
+                     alt.Tooltip("nightly:Q", title=t("Typical nightly"), format=",.0f"),
+                     alt.Tooltip("Status:N", title=t("Status"))],
         )
         .properties(height=60 + 40 * frame["Segment"].nunique())
     )  # fmt: skip
     st.altair_chart(chart, width="stretch")
     how_to_read(
-        "- Each tick is one listing. Most listings cluster together; the further a tick "
-        "sits from its cluster, the more unusual its price.\n"
-        "- On a log scale, equal distances mean equal ratios: twice as expensive is always "
-        "the same distance, whatever the price."
+        t(
+            "- Each tick is one listing. Most listings cluster together; the further a tick "
+            "sits from its cluster, the more unusual its price.\n"
+            "- On a log scale, equal distances mean equal ratios: twice as expensive is always "
+            "the same distance, whatever the price."
+        )
     )
 
 
 def _deep_discounts(deep: pd.DataFrame, currency: str) -> None:
     section(
-        "Deep discounts (kept)",
-        f"Prices at least {DEEP_DISCOUNT_PCT}% below the listing's own original price. They "
-        "are real offers, so they stay in the statistics; they show aggressive competitors.",
+        t("Deep discounts (kept)"),
+        t(
+            "Prices at least {pct}% below the listing's own original price. They are real "
+            "offers, so they stay in the statistics; they show aggressive competitors.",
+            pct=DEEP_DISCOUNT_PCT,
+        ),
     )
     if deep.empty:
-        st.caption("No deep discounts in the latest data.")
+        st.caption(t("No deep discounts in the latest data."))
         return
     amount = st.column_config.NumberColumn(format="localized")
     st.dataframe(
-        deep.drop(columns="listing_id"),
+        deep.drop(columns="listing_id").rename(columns=lambda name: t(str(name))),
         hide_index=True,
         width="stretch",
         column_config={
-            "Original nightly": amount,
-            "Nightly paid": amount,
-            "Discount": st.column_config.NumberColumn(format="%.0f%%"),
+            t("Original nightly"): amount,
+            t("Nightly paid"): amount,
+            t("Discount"): st.column_config.NumberColumn(format="%.0f%%"),
         },
     )
     top = deep.iloc[0]
     insight(
-        f"**{top['Listing']}** cuts **{top['Discount']:.0f}%** for {top['Nights']}-night stays "
-        f"(to {format_money(top['Nightly paid'], currency)} per night). Competitors this "
-        "aggressive set the floor for long stays."
+        t(
+            "**{listing}** cuts **{pct}%** for {nights}-night stays (to {price} per night). "
+            "Competitors this aggressive set the floor for long stays.",
+            listing=top["Listing"],
+            pct=f"{top['Discount']:.0f}",
+            nights=top["Nights"],
+            price=format_money(top["Nightly paid"], currency),
+        )
     )
 
 
 def _method() -> None:
     policy = OutlierPolicy()
-    with st.expander("How outliers are detected", icon=":material/science:"):
+    with st.expander(t("How outliers are detected"), icon=":material/science:"):
         st.markdown(
-            "A naive cut-off fails both ways: it would drop genuine luxury listings and "
-            "aggressive discounts. So each listing is judged on the **median of all its "
-            "prices**, within its **segment** (same number of bedrooms; the whole market if "
-            f"the segment has fewer than {policy.min_segment_size} listings), and flagged "
-            "only when two tests agree:\n\n"
-            f"1. **Statistically extreme**: robust z-score above {policy.z_threshold} "
-            "(computed with the median and MAD of log prices, so a few extreme values cannot "
-            "hide themselves).\n"
-            f"2. **Far in relative terms**: at least {policy.high_ratio}× the segment median, "
-            f"or at most {policy.low_ratio}× of it.\n\n"
-            f"Prices of {policy.placeholder_ratio:g}× the segment median or more are always "
-            "flagged: as an **implausible price** when the listing has never been booked "
-            "(no reviews), otherwise as **far above its segment** (luxury or a different "
-            "kind of property, such as a country estate among city flats)."
+            t(
+                "A naive cut-off fails both ways: it would drop genuine luxury listings and "
+                "aggressive discounts. So each listing is judged on the **median of all its "
+                "prices**, within its **segment** (same number of bedrooms; the whole market "
+                "if the segment has fewer than {min_size} listings), and flagged only when two "
+                "tests agree:\n\n"
+                "1. **Statistically extreme**: robust z-score above {z} (computed with the "
+                "median and MAD of log prices, so a few extreme values cannot hide "
+                "themselves).\n"
+                "2. **Far in relative terms**: at least {high}× the segment median, or at most "
+                "{low}× of it.\n\n"
+                "Prices of {placeholder}× the segment median or more are always flagged: as "
+                "an **implausible price** when the listing has never been booked (no "
+                "reviews), otherwise as **far above its segment** (luxury or a different kind "
+                "of property, such as a country estate among city flats).",
+                min_size=policy.min_segment_size,
+                z=policy.z_threshold,
+                high=policy.high_ratio,
+                low=policy.low_ratio,
+                placeholder=f"{policy.placeholder_ratio:g}",
+            )
         )
-    caveat("Outliers are excluded from statistics only: they stay in every download, "
-           "with a price_outlier column in listings.")  # fmt: skip
+    caveat(t("Outliers are excluded from statistics only: they stay in every download, "
+             "with a price_outlier column in listings."))  # fmt: skip
+
+
+def _segment(segment: str) -> str:
+    """Translate a domain segment name such as "2 bedrooms" or "unknown size"."""
+    count, _, rest = segment.partition(" ")
+    if rest == "bedrooms" and count.isdigit():
+        return t("{count} bedrooms", count=int(count))
+    return t(segment)

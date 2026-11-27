@@ -27,6 +27,7 @@ from airbnb_tracker.infrastructure.exporters.dataset import (
 from airbnb_tracker.infrastructure.persistence import SqliteRepository
 from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.formatting import format_money, money_input
+from airbnb_tracker.interface.web.i18n import t
 
 _MY_PRICE = "_my_nightly_price"
 EXCLUDE_OUTLIERS_KEY = "_exclude_outliers"
@@ -96,24 +97,26 @@ def analysis_controls(settings: AppSettings | None) -> None:
         st.session_state[key] = st.session_state[widget_key]
 
     exclude = st.toggle(
-        "Exclude price outliers",
+        t("Exclude price outliers"),
         value=excluding_outliers(settings),
         key="_w_exclude_outliers",
         on_change=remember,
         args=("_w_exclude_outliers", EXCLUDE_OUTLIERS_KEY),
-        help="Leaves implausible or far-off prices out of every statistic. They stay in the "
-        "downloads.",
+        help=t(
+            "Leaves implausible or far-off prices out of every statistic. They stay in the "
+            "downloads."
+        ),
     )
     st.segmented_control(
-        "Outlier sensitivity",
+        t("Outlier sensitivity"),
         [s.value for s in OutlierSensitivity],
         default=outlier_sensitivity(settings).value,
         key="_w_outlier_sensitivity",
         on_change=remember,
         args=("_w_outlier_sensitivity", SENSITIVITY_KEY),
-        format_func=str.capitalize,
+        format_func=lambda value: t(str(value).capitalize()),
         disabled=not exclude,
-        help="\n".join(f"- {s.label}" for s in OutlierSensitivity),
+        help="\n".join(f"- {t(s.label)}" for s in OutlierSensitivity),
     )
 
 
@@ -135,17 +138,18 @@ def load_market(settings: AppSettings, my_price: float | None) -> MarketData | N
     version = database_version(settings)
     if version is None:
         return None
-    return _load(
-        str(config_path()),
-        db_version=version,
-        config_version=config_path().stat().st_mtime,
-        my_price=my_price or 0.0,
-        exclude_outliers=excluding_outliers(settings),
-        sensitivity=outlier_sensitivity(settings).value,
-    )
+    with st.spinner(t("Loading your market data…")):
+        return _load(
+            str(config_path()),
+            db_version=version,
+            config_version=config_path().stat().st_mtime,
+            my_price=my_price or 0.0,
+            exclude_outliers=excluding_outliers(settings),
+            sensitivity=outlier_sensitivity(settings).value,
+        )
 
 
-@st.cache_data(show_spinner="Loading your market data…")
+@st.cache_data(show_spinner=False)
 def _load(
     config: str,
     *,
@@ -221,12 +225,14 @@ def my_price_input(settings: AppSettings) -> int | None:
     """Your nightly price, shared by every page that shows a position."""
     configured = settings.my_listing.nightly_price
     return money_input(
-        "Your nightly price",
+        t("Your nightly price"),
         key=_MY_PRICE,
         currency=settings.scraping.currency,
         default=round(configured) if configured else None,
-        help="Type the price you charge (or plan to charge) per night to see where it "
-        "stands. It is not saved; set a default in step 1.",
+        help=t(
+            "Type the price you charge (or plan to charge) per night to see where it "
+            "stands. It is not saved; set a default in Set up my market."
+        ),
     )
 
 
@@ -236,12 +242,12 @@ def money(amount: float | None, currency: str) -> str:
 
 def ago(moment: datetime | None) -> str:
     if moment is None:
-        return "never"
+        return t("never")
     minutes = int((datetime.now(UTC) - moment).total_seconds() // 60)
     if minutes < 1:
-        return "just now"
+        return t("just now")
     if minutes < 60:
-        return f"{minutes} min ago"
+        return t("{minutes} min ago", minutes=minutes)
     if minutes < 48 * 60:
-        return f"{minutes // 60} h ago"
-    return f"{minutes // (24 * 60)} days ago"
+        return t("{hours} h ago", hours=minutes // 60)
+    return t("{days} days ago", days=minutes // (24 * 60))

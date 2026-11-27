@@ -35,10 +35,11 @@ from airbnb_tracker.interface.web.glossary import (
     BASE_RATE,
     GUEST_TOTAL,
     HOST_PAYOUT,
-    NIGHTLY_AFTER_DISCOUNT,
     glossary,
 )
 from airbnb_tracker.interface.web.guards import require_settings
+from airbnb_tracker.interface.web.i18n import t
+from airbnb_tracker.interface.web.navigation import link
 from airbnb_tracker.interface.web.theme import CORAL, INK
 
 CALCULATOR_PRICE = "_calc_nightly_price"
@@ -69,21 +70,23 @@ _TAX_GUIDE_URL = "https://assets.airbnb.com/help/Airbnb_TaxGuide2026_Colombia_SP
 _DISCOUNTS_URL = "https://www.airbnb.com/help/article/2061"
 _FEE_SOURCES = (
     "- **15.5% host-only service fee**, deducted from your payout, on nights and cleaning: "
-    f"[Airbnb]({_AIRBNB_FEES_URL}), [Airbnb Q4 2025 results]({_AIRBNB_RESULTS_URL}).\n"
-    f"- **19% VAT on Airbnb's fee in Colombia**: [Renteo]({_RENTEO_URL}).\n"
+    "[Airbnb]({fees_url}), [Airbnb Q4 2025 results]({results_url}).\n"
+    "- **19% VAT on Airbnb's fee in Colombia**: [Renteo]({renteo_url}).\n"
     "- **19% VAT on the stay** only if you are *responsable de IVA*: "
-    f"[Airbnb tax guide Colombia 2026]({_TAX_GUIDE_URL}).\n"
+    "[Airbnb tax guide Colombia 2026]({tax_url}).\n"
     "- **Discounts** apply to nights only (weekly from 7, monthly from 28 nights), never to "
-    f"the cleaning fee: [Airbnb help]({_DISCOUNTS_URL})."
+    "the cleaning fee: [Airbnb help]({discounts_url})."
 )
 
 
 def render() -> None:
-    st.title("Earnings calculator")
-    st.caption("Pricing")
+    st.title(t("Earnings calculator"))
+    st.caption(t("Pricing"))
     st.markdown(
-        "Set a price and see **what you really earn**: Airbnb's fees, taxes and your costs. "
-        "It also tells you **what to enter in Airbnb** (price, discounts, cleaning fee)."
+        t(
+            "Set a price and see **what you really earn**: Airbnb's fees, taxes and your costs. "
+            "It also tells you **what to enter in Airbnb** (price, discounts, cleaning fee)."
+        )
     )
     settings = require_settings()
     if settings is None:
@@ -120,57 +123,69 @@ def _pricing_section(
     mine = settings.my_listing
     weekly_typical, monthly_typical = _market_discounts(market)
     with st.container(border=True):
-        st.subheader("1 · Your Airbnb pricing")
-        st.caption("The values you set in Airbnb → Calendar → Pricing.")
+        st.subheader(t("1 · Your Airbnb pricing"))
+        st.caption(t("The values you set in Airbnb → Calendar → Pricing."))
         reverse = st.toggle(
-            "Start from what I want to receive per night",
-            help="Enter your target net income per night and get the price to publish.",
+            t("Start from what I want to receive per night"),
+            help=t("Enter your target net income per night and get the price to publish."),
         )
         c1, c2, c3, c4 = st.columns(4)
         st.session_state.setdefault(CALCULATOR_NIGHTS, int(saved.get("nights", 30)))
         nights = c1.selectbox(
-            "Stay length to simulate",
+            t("Stay length to simulate"),
             _STAY_CHOICES,
             key=CALCULATOR_NIGHTS,
-            format_func=lambda n: f"{n} night{'s' if n > 1 else ''}",
+            format_func=lambda n: t("{nights} nights", nights=n) if n > 1 else t("1 night"),
         )
         with c2:
             cleaning = money_input(
-                "Cleaning fee per stay",
+                t("Cleaning fee per stay"),
                 key="_calc_cleaning",
                 currency=currency,
                 default=round(mine.cleaning_fee) if mine.cleaning_fee else None,
             )
         weekly = c3.number_input(
-            "Weekly discount %",
+            t("Weekly discount %"),
             0,
             99,
             round(mine.weekly_discount_pct or weekly_typical or 0),
-            help=f"From {WEEKLY_FROM_NIGHTS} nights. Market typical: {_pct(weekly_typical)}.",
+            help=t(
+                "From {nights} nights. Market typical: {pct}.",
+                nights=WEEKLY_FROM_NIGHTS,
+                pct=_pct(weekly_typical),
+            ),
         )
         monthly = c4.number_input(
-            "Monthly discount %",
+            t("Monthly discount %"),
             0,
             99,
             round(mine.monthly_discount_pct or monthly_typical or 0),
-            help=f"From {MONTHLY_FROM_NIGHTS} nights. Market typical: {_pct(monthly_typical)}.",
+            help=t(
+                "From {nights} nights. Market typical: {pct}.",
+                nights=MONTHLY_FROM_NIGHTS,
+                pct=_pct(monthly_typical),
+            ),
         )
         if weekly_typical or monthly_typical:
             st.caption(
-                f"Market typical discounts: weekly {_pct(weekly_typical)}, monthly "
-                f"{_pct(monthly_typical)} (median of competitors that discount)."
+                t(
+                    "Market typical discounts: weekly {weekly}, monthly {monthly} (median of "
+                    "competitors that discount).",
+                    weekly=_pct(weekly_typical),
+                    monthly=_pct(monthly_typical),
+                )
             )
 
         template = StayPricing(1.0, int(nights), weekly, monthly, float(cleaning or 0))
         if reverse:
             target = money_input(
-                "I want to receive per night",
+                t("I want to receive per night"),
                 key="_calc_target",
                 currency=currency,
                 default=saved.get("target_per_night"),
             )
             if not target:
-                st.info("Enter how much you want to receive per night.")
+                st.info(t("Enter how much you want to receive per night."))
                 return None
             try:
                 price = nightly_price_for_payout(float(target), template, policy)
@@ -178,9 +193,13 @@ def _pricing_section(
                 st.error(str(error))
                 return None
             insight(
-                f"Publish **{format_money(price, currency)}** per night to receive "
-                f"**{format_money(target, currency)}** per night on {nights}-night stays, after "
-                "discounts, Airbnb's fee and taxes."
+                t(
+                    "Publish **{price}** per night to receive **{target}** per night on "
+                    "{nights}-night stays, after discounts, Airbnb's fee and taxes.",
+                    price=format_money(price, currency),
+                    target=format_money(target, currency),
+                    nights=nights,
+                )
             )
         else:
             handed_over = st.session_state.pop(PENDING_NIGHTLY_AFTER_DISCOUNT, None)
@@ -189,75 +208,98 @@ def _pricing_section(
                 st.session_state[CALCULATOR_PRICE] = round(base)
                 forget_money_input(CALCULATOR_PRICE)
                 st.caption(
-                    f"From the advisor: {format_money(handed_over, currency)} "
-                    f"{NIGHTLY_AFTER_DISCOUNT.lower()} → {BASE_RATE.lower()} "
-                    f"{format_money(base, currency)} with your {template.discount_pct:g}% discount."
+                    t(
+                        "From the advisor: {price} nightly after discount → base nightly rate "
+                        "{base} with your {discount:g}% discount.",
+                        price=format_money(handed_over, currency),
+                        base=format_money(base, currency),
+                        discount=template.discount_pct,
+                    )
                 )
             default_price = round(mine.nightly_price) if mine.nightly_price else None
             price_input = money_input(
-                BASE_RATE,
+                t(BASE_RATE),
                 key=CALCULATOR_PRICE,
                 currency=currency,
                 default=default_price,
             )
             if not price_input:
-                st.info(f"Enter your {BASE_RATE.lower()}: the price you publish, before discounts.")
+                st.info(t("Enter your base nightly rate: the price you publish, before discounts."))
                 return None
             price = float(price_input)
     return StayPricing(price, int(nights), weekly, monthly, float(cleaning or 0))
 
 
 def _fees_section(saved: dict[str, Any]) -> FeePolicy:
-    with st.expander("Airbnb fees and taxes (Colombia defaults)", icon=":material/percent:"):
-        c1, c2, c3 = st.columns(3)
-        host_fee = c1.number_input(
-            "Airbnb service fee %", 0.0, 50.0, float(saved.get("host_fee_pct", 15.5)), step=0.5
+    """Airbnb's fee and taxes, as set in Settings → Listing configuration (read only here)."""
+    policy = finance_settings.fee_policy(saved)
+    with st.expander(
+        t(
+            "Airbnb fees and taxes: {fee:g}% fee + {vat:g}% VAT on it",
+            fee=policy.host_fee_pct,
+            vat=policy.vat_on_fee_pct,
+        ),
+        icon=":material/percent:",
+    ):
+        if policy.stay_vat_pct:
+            st.markdown(t("You charge VAT on the stay ({vat:g}%).", vat=policy.stay_vat_pct))
+        st.markdown(
+            t(
+                _FEE_SOURCES,
+                fees_url=_AIRBNB_FEES_URL,
+                results_url=_AIRBNB_RESULTS_URL,
+                renteo_url=_RENTEO_URL,
+                tax_url=_TAX_GUIDE_URL,
+                discounts_url=_DISCOUNTS_URL,
+            )
         )
-        vat_on_fee = c2.number_input(
-            "VAT on Airbnb's fee %", 0.0, 30.0, float(saved.get("vat_on_fee_pct", 19.0)), step=1.0
+        caveat(
+            t("Rates change and depend on your tax situation: confirm them with your accountant.")
         )
-        responsible = c3.toggle(
-            "I charge VAT on the stay (responsable de IVA)",
-            value=bool(saved.get("stay_vat_pct", 0)),
-            help="If so, 19% of what the guest pays is VAT you owe the DIAN.",
-        )
-        st.markdown(_FEE_SOURCES)
-        caveat("Rates change and depend on your tax situation: confirm them with your accountant.")
-    return FeePolicy(host_fee, vat_on_fee, 19.0 if responsible else 0.0)
+        link("settings", t("Change them in Settings"), ":material/settings:")
+    return policy
 
 
 def _costs_section(saved: dict[str, Any], currency: str) -> tuple[OperatingCosts, int]:
     with st.container(border=True):
-        st.subheader("3 · Your monthly costs")
+        st.subheader(t("3 · Your monthly costs"))
         st.caption(
-            "Fixed costs you pay every month, and costs you pay every time a guest checks out. "
-            "Edit the amounts (add or remove rows as needed)."
+            t(
+                "Fixed costs you pay every month, and costs you pay every time a guest checks "
+                "out. Edit the amounts (add or remove rows as needed)."
+            )
         )
         left, right = st.columns(2)
         with left:
-            st.markdown("**Fixed, per month**")
-            fixed = _cost_editor(saved.get("fixed_monthly") or DEFAULT_FIXED, "fixed", currency)
+            st.markdown(t("**Fixed, per month**"))
+            fixed = _cost_editor(
+                saved.get("fixed_monthly") or _translated(DEFAULT_FIXED), "fixed", currency
+            )
         with right:
-            st.markdown("**Per booking (each check-out)**")
+            st.markdown(t("**Per booking (each check-out)**"))
             per_booking = _cost_editor(
-                saved.get("per_booking") or DEFAULT_PER_BOOKING, "per_booking", currency
+                saved.get("per_booking") or _translated(DEFAULT_PER_BOOKING),
+                "per_booking",
+                currency,
             )
         c1, c2 = st.columns(2)
         paid_nights = c1.number_input(
-            "Paid nights per 30-day month",
+            t("Paid nights per 30-day month"),
             1,
             30,
             finance_settings.paid_nights(saved),
-            help="Nights actually paid out of the 30 committed: long stays leave gaps "
-            "between guests.",
+            help=t(
+                "Nights actually paid out of the 30 committed: long stays leave gaps between "
+                "guests."
+            ),
         )
         income_tax = c2.number_input(
-            "Income tax provision % (on profit)",
+            t("Income tax provision % (on profit)"),
             0.0,
             50.0,
             float(saved.get("income_tax_pct", 0.0)),
             step=1.0,
-            help="Optional: set aside part of the profit for income tax.",
+            help=t("Optional: set aside part of the profit for income tax."),
         )
     return OperatingCosts(fixed, per_booking, income_tax), int(paid_nights)
 
@@ -273,9 +315,12 @@ def _cost_editor(defaults: Mapping[str, object], key: str, currency: str) -> dic
         hide_index=True,
         width="stretch",
         column_config={
-            "Concept": st.column_config.TextColumn(required=True),
+            "Concept": st.column_config.TextColumn(t("Concept"), required=True),
             "Amount": st.column_config.NumberColumn(
-                f"Amount ({currency})", min_value=0, step=1000, format="localized"
+                t("Amount ({currency})", currency=currency),
+                min_value=0,
+                step=1000,
+                format="localized",
             ),
         },
     )
@@ -291,52 +336,69 @@ def _cost_editor(defaults: Mapping[str, object], key: str, currency: str) -> dic
 
 def _booking_result(booking: BookingBreakdown, currency: str) -> None:
     section(
-        "2 · What one booking leaves you",
-        f"A {booking.nights}-night stay, from what the guest pays to what reaches your account.",
+        t("2 · What one booking leaves you"),
+        t(
+            "A {nights}-night stay, from what the guest pays to what reaches your account.",
+            nights=booking.nights,
+        ),
     )
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(GUEST_TOTAL, format_money(booking.guest_pays, currency))
+    c1.metric(t(GUEST_TOTAL), format_money(booking.guest_pays, currency))
     c2.metric(
-        "Airbnb fees",
+        t("Airbnb fees"),
         format_money(booking.airbnb_fee + booking.vat_on_fee, currency),
-        help="Service fee plus the VAT on it.",
+        help=t("Service fee plus the VAT on it."),
     )
     c3.metric(
-        "You receive",
+        t("You receive"),
         format_money(booking.payout_after_vat, currency),
-        help="After Airbnb's fee and, if it applies, the VAT you owe on the stay.",
+        help=t("After Airbnb's fee and, if it applies, the VAT you owe on the stay."),
     )
-    c4.metric(f"{HOST_PAYOUT} per night", format_money(booking.per_night, currency))
+    c4.metric(
+        t("{payout} per night", payout=t(HOST_PAYOUT)), format_money(booking.per_night, currency)
+    )
 
+    nightly = format_money(booking.nightly_after_discount, currency)
+    stay_line = (
+        t(
+            "{nights} nights × {price} (after {discount:g}% discount)",
+            nights=booking.nights,
+            price=nightly,
+            discount=booking.discount_pct,
+        )
+        if booking.discount_pct
+        else t("{nights} nights × {price}", nights=booking.nights, price=nightly)
+    )
     lines = [
-        (
-            f"{booking.nights} nights × {format_money(booking.nightly_after_discount, currency)}"
-            + (f" (after {booking.discount_pct:g}% discount)" if booking.discount_pct else ""),
-            booking.accommodation,
-        ),
-        ("Cleaning fee", booking.cleaning_fee),
-        (GUEST_TOTAL, booking.guest_pays),
-        ("Airbnb service fee", -booking.airbnb_fee),
-        ("VAT on Airbnb's fee", -booking.vat_on_fee),
-        (HOST_PAYOUT, booking.payout),
-        ("VAT you owe on the stay", -booking.stay_vat),
-        ("You keep after VAT", booking.payout_after_vat),
+        (stay_line, booking.accommodation),
+        (t("Cleaning fee"), booking.cleaning_fee),
+        (t(GUEST_TOTAL), booking.guest_pays),
+        (t("Airbnb service fee"), -booking.airbnb_fee),
+        (t("VAT on Airbnb's fee"), -booking.vat_on_fee),
+        (t(HOST_PAYOUT), booking.payout),
+        (t("VAT you owe on the stay"), -booking.stay_vat),
+        (t("You keep after VAT"), booking.payout_after_vat),
     ]
+    amount_column = t("Amount")
     table = pd.DataFrame(
-        [(label, round(amount)) for label, amount in lines if amount or label == GUEST_TOTAL],
-        columns=["Line", "Amount"],
+        [(label, round(amount)) for label, amount in lines if amount or label == t(GUEST_TOTAL)],
+        columns=[t("Line"), amount_column],
     )
     st.dataframe(
         table,
         hide_index=True,
         width="stretch",
-        column_config={"Amount": st.column_config.NumberColumn(format="localized")},
+        column_config={amount_column: st.column_config.NumberColumn(format="localized")},
     )
     insight(
-        f"Of every **{format_money(booking.guest_pays, currency)}** the guest pays, "
-        f"**{booking.effective_fee_pct:.1f}%** goes to fees and taxes: you keep "
-        f"**{format_money(booking.payout_after_vat, currency)}** "
-        f"({format_money(booking.per_night, currency)} per night)."
+        t(
+            "Of every **{guest}** the guest pays, **{fees:.1f}%** goes to fees and taxes: you "
+            "keep **{payout}** ({per_night} per night).",
+            guest=format_money(booking.guest_pays, currency),
+            fees=booking.effective_fee_pct,
+            payout=format_money(booking.payout_after_vat, currency),
+            per_night=format_money(booking.per_night, currency),
+        )
     )
 
 
@@ -350,21 +412,27 @@ def _month_result(
     market: MarketData | None,
 ) -> None:
     section(
-        "4 · A typical month",
-        f"30 days at {month.occupancy_pct:.0f}% occupancy: {month.occupied_nights:.0f} nights "
-        f"booked, about {month.bookings:.1f} stays of {pricing.nights} nights.",
+        t("4 · A typical month"),
+        t(
+            "30 days at {occupancy:.0f}% occupancy: {booked:.0f} nights booked, about "
+            "{stays:.1f} stays of {nights} nights.",
+            occupancy=month.occupancy_pct,
+            booked=month.occupied_nights,
+            stays=month.bookings,
+            nights=pricing.nights,
+        ),
     )
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Guests pay", format_money(month.guest_payments, currency))
+    c1.metric(t("Guests pay"), format_money(month.guest_payments, currency))
     c2.metric(
-        "Fees & taxes",
+        t("Fees & taxes"),
         format_money(month.airbnb_fees + month.stay_vat + month.income_tax, currency),
     )
-    c3.metric("Your costs", format_money(month.booking_costs + month.fixed_costs, currency))
+    c3.metric(t("Your costs"), format_money(month.booking_costs + month.fixed_costs, currency))
     c4.metric(
-        "Net profit",
+        t("Net profit"),
         format_money(month.net_profit, currency),
-        delta=f"{month.margin_pct:.0f}% margin",
+        delta=t("{margin:.0f}% margin", margin=month.margin_pct),
         delta_color="off",
     )
     st.altair_chart(_waterfall(month, currency), width="stretch")
@@ -373,29 +441,42 @@ def _month_result(
     parts = []
     if costs.fixed_total + costs.per_booking_total == 0:
         parts.append(
-            "Add your monthly and per-booking costs above to see your real profit and "
-            "the minimum price that covers them."
+            t(
+                "Add your monthly and per-booking costs above to see your real profit and "
+                "the minimum price that covers them."
+            )
         )
     elif break_even is not None:
         parts.append(
-            f"At {month.occupancy_pct:.0f}% occupancy you need at least "
-            f"**{format_money(break_even, currency)}** per night to cover every cost."
+            t(
+                "At {occupancy:.0f}% occupancy you need at least **{price}** per night to "
+                "cover every cost.",
+                occupancy=month.occupancy_pct,
+                price=format_money(break_even, currency),
+            )
         )
     typical = _market_typical_price(market, pricing.nights)
     if typical:
         diff = (pricing.nightly_after_discount / typical - 1) * 100
         parts.append(
-            f"Your price after discount is **{diff:+.0f}%** versus the typical competitor "
-            f"for {pricing.nights}-night stays ({format_money(typical, currency)})."
+            t(
+                "Your price after discount is **{diff:+.0f}%** versus the typical competitor "
+                "for {nights}-night stays ({typical}).",
+                diff=diff,
+                nights=pricing.nights,
+                typical=format_money(typical, currency),
+            )
         )
     if parts:
         insight(" ".join(parts))
     how_to_read(
-        "- **Guests pay**: nights after discount plus the cleaning fee, for every stay.\n"
-        "- **Fees & taxes**: Airbnb's fee and its VAT, VAT on the stay if you charge it, and "
-        "the income tax provision.\n"
-        "- **Costs**: your fixed monthly costs plus per-booking costs × number of stays.\n"
-        "- Longer stays mean fewer check-outs, so lower per-booking costs."
+        t(
+            "- **Guests pay**: nights after discount plus the cleaning fee, for every stay.\n"
+            "- **Fees & taxes**: Airbnb's fee and its VAT, VAT on the stay if you charge it, "
+            "and the income tax provision.\n"
+            "- **Costs**: your fixed monthly costs plus per-booking costs × number of stays.\n"
+            "- Longer stays mean fewer check-outs, so lower per-booking costs."
+        )
     )
 
 
@@ -415,7 +496,7 @@ def _waterfall(month: MonthlyProjection, currency: str) -> alt.Chart:
         start, running = running, running + amount
         rows.append(
             {
-                "Step": label,
+                "Step": t(label),
                 "start": start,
                 "end": running,
                 "amount": amount,
@@ -423,7 +504,7 @@ def _waterfall(month: MonthlyProjection, currency: str) -> alt.Chart:
             }
         )
     rows.append(
-        {"Step": "Net profit", "start": 0.0, "end": running, "amount": running, "kind": "net"}
+        {"Step": t("Net profit"), "start": 0.0, "end": running, "amount": running, "kind": "net"}
     )
     frame = pd.DataFrame(rows)
     order = list(frame["Step"])
@@ -439,7 +520,10 @@ def _waterfall(month: MonthlyProjection, currency: str) -> alt.Chart:
                 legend=None,
                 scale=alt.Scale(domain=["in", "out", "net"], range=["#B0B0B0", CORAL, INK]),
             ),
-            tooltip=["Step", alt.Tooltip("amount:Q", format=",.0f")],
+            tooltip=[
+                alt.Tooltip("Step:N", title=t("Step")),
+                alt.Tooltip("amount:Q", title=t("Amount"), format=",.0f"),
+            ],
         )
     )
     chart: alt.Chart = bars.properties(height=300)
@@ -448,27 +532,29 @@ def _waterfall(month: MonthlyProjection, currency: str) -> alt.Chart:
 
 def _airbnb_setup(pricing: StayPricing, currency: str) -> None:
     with st.container(border=True):
-        st.subheader("Set it up in Airbnb")
-        st.caption("Airbnb → Listings → your listing → Calendar → Pricing / Availability.")
+        st.subheader(t("Set it up in Airbnb"))
+        st.caption(t("Airbnb → Listings → your listing → Calendar → Pricing / Availability."))
         rows = pd.DataFrame(
             [
-                ("Nightly price", format_money(pricing.nightly_price, currency)),
+                (t(BASE_RATE), format_money(pricing.nightly_price, currency)),
                 (
-                    f"Weekly discount ({WEEKLY_FROM_NIGHTS}+ nights)",
+                    t("Weekly discount ({nights}+ nights)", nights=WEEKLY_FROM_NIGHTS),
                     f"{pricing.weekly_discount_pct:g}%",
                 ),
                 (
-                    f"Monthly discount ({MONTHLY_FROM_NIGHTS}+ nights)",
+                    t("Monthly discount ({nights}+ nights)", nights=MONTHLY_FROM_NIGHTS),
                     f"{pricing.monthly_discount_pct:g}%",
                 ),
-                ("Cleaning fee", format_money(pricing.cleaning_fee, currency)),
+                (t("Cleaning fee"), format_money(pricing.cleaning_fee, currency)),
             ],
-            columns=["Setting", "Value"],
+            columns=[t("Setting"), t("Value")],
         )
         st.dataframe(rows, hide_index=True, width="stretch")
         caveat(
-            "Airbnb adds its own monthly stay savings for 28+ nights; Airbnb pays for them, "
-            "so they do not reduce your payout."
+            t(
+                "Airbnb adds its own monthly stay savings for 28+ nights; Airbnb pays for "
+                "them, so they do not reduce your payout."
+            )
         )
 
 
@@ -478,7 +564,7 @@ def _save_defaults(
     costs: OperatingCosts,
     paid_nights: int,
 ) -> None:
-    if not st.button("Save these values as my defaults", icon=":material/save:"):
+    if not st.button(t("Save these values as my defaults"), icon=":material/save:"):
         return
     raw = read_raw_config(config_path())
     raw.setdefault("my_listing", {}).update(
@@ -500,7 +586,9 @@ def _save_defaults(
         "paid_nights_per_month": paid_nights,
     }
     save_raw_config(raw, config_path())
-    st.toast("Saved: the calculator will open with these values.", icon=":material/check_circle:")
+    st.toast(
+        t("Saved: the calculator will open with these values."), icon=":material/check_circle:"
+    )
 
 
 # --- helpers -------------------------------------------------------------------------
@@ -530,6 +618,11 @@ def _market_typical_price(market: MarketData | None, nights: int) -> float | Non
         return None
     closest = min(market.bundle.durations, key=lambda d: abs(d.nights - nights))
     return float(closest.distribution.median.amount) if closest.distribution else None
+
+
+def _translated(defaults: Mapping[str, int]) -> dict[str, int]:
+    """Default cost names in the current language (saved values keep what was typed)."""
+    return {t(name): amount for name, amount in defaults.items()}
 
 
 def _pct(value: float | None) -> str:

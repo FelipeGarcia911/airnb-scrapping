@@ -9,8 +9,8 @@ from airbnb_tracker.application.dto import DurationReport
 from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import settings_or_none
 from airbnb_tracker.interface.web.data import MarketData, load_market, money, my_price_input
-from airbnb_tracker.interface.web.glossary import NIGHTLY_AFTER_DISCOUNT
 from airbnb_tracker.interface.web.guards import outlier_notice
+from airbnb_tracker.interface.web.i18n import t
 from airbnb_tracker.interface.web.navigation import link, next_step
 from airbnb_tracker.interface.web.status import run_estimate
 
@@ -19,12 +19,17 @@ POSITION_LABELS = {
     "competitive": "Competitive",
     "premium": "Premium",
 }
+POSITION_LABELS_LOWER = {
+    "below_market": "below market",
+    "competitive": "competitive",
+    "premium": "premium",
+}
 MONTHLY_SPECIALIST_NIGHTS = 20
 
 
 def render() -> None:
-    st.title("Market overview")
-    st.caption("Market analytics")
+    st.title(t("Market overview"))
+    st.caption(t("Market analytics"))
     settings = settings_or_none()
     if settings is None:
         _welcome()
@@ -42,13 +47,15 @@ def render() -> None:
     _kpis(settings, data, focus)
     _takeaways(settings, data, focus, price)
     _explore()
-    next_step("price_setup", "Next: price & configure")
+    next_step("price_setup", t("Next: price & configure"))
 
 
 def _welcome() -> None:
     st.markdown(
-        "Track what the stays around yours charge, how booked they are and what they offer, "
-        "so you can price with data instead of guesses."
+        t(
+            "Track what the stays around yours charge, how booked they are and what they "
+            "offer, so you can price with data instead of guesses."
+        )
     )
     steps = st.columns(3)
     cards = [
@@ -61,19 +68,22 @@ def _welcome() -> None:
     ]  # fmt: skip
     for column, (title, text) in zip(steps, cards, strict=True):
         with column.container(border=True, height="stretch"):
-            st.markdown(f"**{title}**")
-            st.caption(text)
-    link("setup", "Start: set up my market", ":material/arrow_forward:")
+            st.markdown(f"**{t(title)}**")
+            st.caption(t(text))
+    link("setup", t("Start: set up my market"), ":material/arrow_forward:")
 
 
 def _waiting_for_data(settings: AppSettings) -> None:
     run = run_estimate(settings)
     st.info(
-        f"Your market is set up but there is no data for it yet. Collect it in step 2 "
-        f"(≈ {run.total_minutes:.0f} min); this page fills in when it finishes.",
+        t(
+            "Your market is set up but there is no data for it yet. Collect it in step 2 "
+            "(≈ {minutes:.0f} min); this page fills in when it finishes.",
+            minutes=run.total_minutes,
+        ),
         icon=":material/sync:",
     )
-    next_step("collect", "Collect data")
+    next_step("collect", t("Collect data"))
 
 
 def _comp_set_description(settings: AppSettings) -> str:
@@ -81,17 +91,25 @@ def _comp_set_description(settings: AppSettings) -> str:
     bedrooms = ""
     if filters.min_bedrooms or search.max_bedrooms:
         low, high = filters.min_bedrooms, search.max_bedrooms
-        bedrooms = f"{low}–{high} bedrooms" if low and high else f"{low or high} bedrooms"
-    kind = {"entire_place": "entire places", "private_room": "private rooms"}.get(
-        filters.room_type.value if filters.room_type else "", "stays"
+        bedrooms = (
+            t("{low}–{high} bedrooms", low=low, high=high)
+            if low and high
+            else t("{count} bedrooms", count=low or high)
+        )
+    kind = {
+        "entire_place": t("entire places"),
+        "private_room": t("private rooms"),
+    }.get(filters.room_type.value if filters.room_type else "", t("stays"))
+    where = (
+        t("within {km:g} km of your listing", km=search.radius_km)
+        if search.center
+        else t("in your URL")
     )
-    where = f"within {search.radius_km:g} km of your listing" if search.center else "in your URL"
-    nearest = settings.enrich.competitors or "all"
-    return (
-        f"Comp set: the {nearest} nearest {kind}"
-        + (f" with {bedrooms}" if bedrooms else "")
-        + f" for {filters.guests} guests, {where}."
-    )
+    nearest = settings.enrich.competitors or t("all")
+    description = t("Comp set: the {nearest} nearest {kind}", nearest=nearest, kind=kind)
+    if bedrooms:
+        description += t(" with {bedrooms}", bedrooms=bedrooms)
+    return description + t(" for {guests} guests, {where}.", guests=filters.guests, where=where)
 
 
 def _focus_duration(durations: tuple[DurationReport, ...]) -> DurationReport:
@@ -106,32 +124,32 @@ def _kpis(settings: AppSettings, data: MarketData, focus: DurationReport) -> Non
     competitors = data.analysed[~data.analysed["is_mine"]] if len(data.analysed) else data.analysed
     availability = data.bundle.availability
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Comp set", len(competitors), help="Competitors with full details")
+    c1.metric(t("Comp set"), len(competitors), help=t("Competitors with full details"))
     c2.metric(
-        f"Typical {NIGHTLY_AFTER_DISCOUNT.lower()} · {focus.nights} nights",
+        t("Typical nightly after discount · {nights} nights", nights=focus.nights),
         money(float(dist.median.amount), currency) if dist else "—",
-        help="Median nightly price of the comp set",
+        help=t("Median nightly price of the comp set"),
     )
     position = (
-        f"{POSITION_LABELS[focus.position.value]}"
+        t(POSITION_LABELS[focus.position.value])
         if focus.position and focus.percentile is not None
         else "—"
     )
     c3.metric(
-        "Your position",
+        t("Your position"),
         position,
-        help="Below P25 = below market · P25–P75 = competitive · above P75 = premium",
+        help=t("Below P25 = below market · P25–P75 = competitive · above P75 = premium"),
     )
     c4.metric(
-        "Nights not bookable",
+        t("Nights not bookable"),
         f"{availability.median_unavailable_pct:.0f}%"
         if availability.median_unavailable_pct is not None
         else "—",
-        help="Median over the next days: a rough sign of occupancy.",
+        help=t("Median over the next days: a rough sign of occupancy."),
     )
     c5.metric(
-        "Typical minimum stay",
-        f"{availability.median_min_nights:g} nights"
+        t("Typical minimum stay"),
+        t("{nights:g} nights", nights=availability.median_min_nights)
         if availability.median_min_nights is not None
         else "—",
     )
@@ -145,44 +163,72 @@ def _takeaways(
     dist = focus.distribution
     if dist:
         low, high = float(dist.p25.amount), float(dist.p75.amount)
-        points.append(
-            f"For **{focus.nights}-night stays**, half of your competitors charge between "
-            f"**{money(low, currency)}** and **{money(high, currency)}** per night"
-            + (
-                f" (≈ {money(low * 30, currency)}–{money(high * 30, currency)} a month)."
-                if focus.nights >= 28
-                else "."
+        if focus.nights >= 28:
+            points.append(
+                t(
+                    "For **{nights}-night stays**, half of your competitors charge between "
+                    "**{low}** and **{high}** per night (≈ {low_month}–{high_month} a month).",
+                    nights=focus.nights,
+                    low=money(low, currency),
+                    high=money(high, currency),
+                    low_month=money(low * 30, currency),
+                    high_month=money(high * 30, currency),
+                )
             )
-        )
+        else:
+            points.append(
+                t(
+                    "For **{nights}-night stays**, half of your competitors charge between "
+                    "**{low}** and **{high}** per night.",
+                    nights=focus.nights,
+                    low=money(low, currency),
+                    high=money(high, currency),
+                )
+            )
     if focus.discounted_share_pct and focus.median_discount_pct:
         points.append(
-            f"**{focus.discounted_share_pct:.0f}%** of them discount {focus.nights}-night stays, "
-            f"typically by **{focus.median_discount_pct:.0f}%**."
+            t(
+                "**{share:.0f}%** of them discount {nights}-night stays, typically by "
+                "**{discount:.0f}%**.",
+                share=focus.discounted_share_pct,
+                nights=focus.nights,
+                discount=focus.median_discount_pct,
+            )
         )
     if price and focus.percentile is not None and focus.position:
         points.append(
-            f"At **{money(price, currency)}** per night you are more expensive than "
-            f"**{focus.percentile:.0f}%** of the comp set: "
-            f"**{POSITION_LABELS[focus.position.value].lower()}**."
+            t(
+                "At **{price}** per night you are more expensive than **{percentile:.0f}%** "
+                "of the comp set: **{position}**.",
+                price=money(price, currency),
+                percentile=focus.percentile,
+                position=t(POSITION_LABELS_LOWER[focus.position.value]),
+            )
         )
     elif not price:
-        points.append("Enter your nightly price above to see where you stand.")
+        points.append(t("Enter your nightly price above to see where you stand."))
     availability = data.bundle.availability
     if availability.median_unavailable_pct is not None:
         points.append(
-            f"In the next {data.bundle.availability_window_days} days about "
-            f"**{availability.median_unavailable_pct:.0f}%** of competitors' nights are not "
-            "bookable (bookings or blocks)."
+            t(
+                "In the next {days} days about **{pct:.0f}%** of competitors' nights are not "
+                "bookable (bookings or blocks).",
+                days=data.bundle.availability_window_days,
+                pct=availability.median_unavailable_pct,
+            )
         )
     specialists = _monthly_specialists(data.analysed)
     if specialists:
         points.append(
-            f"**{specialists}** competitors only accept stays of "
-            f"{MONTHLY_SPECIALIST_NIGHTS}+ nights: your direct monthly competition "
-            "(see Availability)."
+            t(
+                "**{count}** competitors only accept stays of {nights}+ nights: your direct "
+                "monthly competition (see Availability).",
+                count=specialists,
+                nights=MONTHLY_SPECIALIST_NIGHTS,
+            )
         )
     with st.container(border=True):
-        st.subheader("Key takeaways")
+        st.subheader(t("Key takeaways"))
         st.markdown("\n".join(f"- {p}" for p in points))
 
 
@@ -215,10 +261,10 @@ def _explore() -> None:
         ]),
     ]  # fmt: skip
     for title, cards in groups:
-        st.subheader(title)
+        st.subheader(t(title))
         for start in range(0, len(cards), 3):
             row = cards[start : start + 3]
             for column, (name, label, icon, text) in zip(st.columns(3), row, strict=False):
                 with column.container(border=True, height="stretch"):
-                    link(name, label, icon)
-                    st.caption(text)
+                    link(name, t(label), icon)
+                    st.caption(t(text))

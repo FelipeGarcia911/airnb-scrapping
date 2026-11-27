@@ -14,6 +14,7 @@ from airbnb_tracker.domain.property_types import PropertyGroup, property_group
 from airbnb_tracker.domain.value_objects import ListingId
 from airbnb_tracker.infrastructure.airbnb import PyAirbnbDetailsGateway
 from airbnb_tracker.infrastructure.config import (
+    AppSettings,
     ConfigurationError,
     parse_settings,
     read_raw_config,
@@ -32,6 +33,7 @@ from airbnb_tracker.interface.web.config_form import (
 from airbnb_tracker.interface.web.context import config_path
 from airbnb_tracker.interface.web.estimates import estimate
 from airbnb_tracker.interface.web.formatting import forget_money_input, money_input
+from airbnb_tracker.interface.web.i18n import t
 from airbnb_tracker.interface.web.navigation import go_to
 from airbnb_tracker.interface.web.theme import AREA_FILL
 
@@ -44,12 +46,14 @@ def render() -> None:
     base = _load_base(path)
     _init_state(base)
 
-    st.title("Set up my market")
-    st.caption("Data & settings · start here, then collect data")
+    st.title(t("Set up my market"))
+    st.caption(t("Setup & data · start here, then collect data"))
     st.markdown(
-        "Tell the tracker **which listing is yours** and **what counts as a competitor**. "
-        "Like a *comp set* in market tools, only comparable stays near yours are analysed. "
-        "Changes take effect the next time you collect data (step 2)."
+        t(
+            "Tell the tracker **which listing is yours** and **what counts as a competitor**. "
+            "Like a *comp set* in market tools, only comparable stays near yours are analysed. "
+            "Changes take effect the next time you collect data (step 2)."
+        )
     )
     _step_property()
     _step_area()
@@ -62,67 +66,63 @@ def render() -> None:
 
 def _step_property() -> None:
     with st.container(border=True):
-        st.subheader("1 · Your property")
+        st.subheader(t("1 · Your property"))
         st.caption(
-            "Paste your listing and read it from Airbnb: its location centres the search. "
-            "Then enter the pricing you use on Airbnb: it is the starting point of every "
-            "simulation."
+            t(
+                "Paste your listing and read it from Airbnb: its location centres the search. "
+                "Then enter the pricing you use on Airbnb: it is the starting point of every "
+                "simulation."
+            )
         )
         st.text_input(
-            "Your Airbnb link or listing ID",
+            t("Your Airbnb link or listing ID"),
             key=_key("listing_id"),
             placeholder="https://www.airbnb.com/rooms/123456789",
-            help="Open your listing on airbnb.com and copy the address bar. The number after "
-            "/rooms/ is enough.",
+            help=t(
+                "Open your listing on airbnb.com and copy the address bar. The number after "
+                "/rooms/ is enough."
+            ),
         )
         st.button(
-            "Read my listing from Airbnb",
+            t("Read my listing from Airbnb"),
             icon=":material/download:",
-            help="Reads your listing's location (to centre the search) and kind of property "
-            "(to compare like with like).",
+            help=t(
+                "Reads your listing's location (to centre the search) and kind of property "
+                "(to compare like with like)."
+            ),
             on_click=_read_listing,  # callbacks run before widgets, so they may update them
         )
         _show_locate_feedback()
 
-        st.markdown("**Your pricing on Airbnb**")
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            money_input("Base nightly rate", key=_key("nightly_price"), currency=_currency(),
-                        help="The nightly price you publish, before discounts.")  # fmt: skip
-        c2.number_input("Weekly discount %", 0, 99, key=_key("weekly_discount_pct"),
-                        help="Applies from 7 nights.")  # fmt: skip
-        c3.number_input("Monthly discount %", 0, 99, key=_key("monthly_discount_pct"),
-                        help="Applies from 28 nights.")  # fmt: skip
-        with c4:
-            money_input("Cleaning fee", key=_key("cleaning_fee"), currency=_currency())
-        c5.number_input("Minimum stay (nights)", 0, 365, key=_key("min_nights"),
-                        help="0 = not set.")  # fmt: skip
+        st.caption(t("Your rate, discounts and fees are in Settings → Listing configuration."))
 
 
 def _step_area() -> None:
     with st.container(border=True):
-        st.subheader("2 · Area")
-        st.caption("Where your guests would also look. Listings outside this area are ignored.")
+        st.subheader(t("2 · Area"))
+        st.caption(t("Where your guests would also look. Listings outside this area are ignored."))
         st.toggle(
-            "Use an Airbnb search URL instead of a point and radius",
+            t("Use an Airbnb search URL instead of a point and radius"),
             key=_key("use_url"),
-            help="Advanced: search on airbnb.com with any filters, copy the URL and paste it "
-            "here. Dates in the URL are replaced automatically.",
+            help=t(
+                "Advanced: search on airbnb.com with any filters, copy the URL and paste it "
+                "here. Dates in the URL are replaced automatically."
+            ),
         )
         if st.session_state[_key("use_url")]:
-            st.text_input("Airbnb search URL", key=_key("url"))
+            st.text_input(t("Airbnb search URL"), key=_key("url"))
             return
         lat, lon, radius = st.columns(3)
-        lat.number_input("Latitude", key=_key("latitude"), format="%.5f", step=0.001)
-        lon.number_input("Longitude", key=_key("longitude"), format="%.5f", step=0.001)
+        lat.number_input(t("Latitude"), key=_key("latitude"), format="%.5f", step=0.001)
+        lon.number_input(t("Longitude"), key=_key("longitude"), format="%.5f", step=0.001)
         radius.slider(
-            "Radius (km)",
+            t("Radius (km)"),
             1,
             15,
             key=_key("radius_km"),
             step=1,
             format="%d km",
-            help="A smaller radius is faster and keeps competitors truly comparable.",
+            help=t("A smaller radius is faster and keeps competitors truly comparable."),
         )
         st.map(
             {"lat": [st.session_state[_key("latitude")]],
@@ -134,108 +134,118 @@ def _step_area() -> None:
 
 def _step_filters() -> None:
     with st.container(border=True):
-        st.subheader("3 · What is comparable")
+        st.subheader(t("3 · What is comparable"))
         st.caption(
-            "The same filters a guest would use on Airbnb. Match them to your property. "
-            "0 means no limit."
+            t(
+                "The same filters a guest would use on Airbnb. Match them to your property. "
+                "0 means no limit."
+            )
         )
         c1, c2, c3, c4 = st.columns(4)
         c1.number_input(
-            "Guests", key=_key("guests"), min_value=1, max_value=16,
-            help="Search for stays that fit this many guests.",
+            t("Guests"), key=_key("guests"), min_value=1, max_value=16,
+            help=t("Search for stays that fit this many guests."),
         )  # fmt: skip
-        c2.selectbox("Type of place", list(ROOM_TYPES), key=_key("room_type_label"))
+        c2.selectbox(
+            t("Type of place"), list(ROOM_TYPES), key=_key("room_type_label"), format_func=t
+        )
         st.multiselect(
-            "Kinds of property to compare",
+            t("Kinds of property to compare"),
             [g.value for g in PropertyGroup],
             key=_key("property_groups"),
-            format_func=lambda value: PropertyGroup(value).label,
-            placeholder="Every kind of property",
-            help="A city apartment does not compete with a country estate. Pick the kind of "
-            "your listing; leave empty to compare with everything.",
+            format_func=lambda value: t(PropertyGroup(value).label),
+            placeholder=t("Every kind of property"),
+            help=t(
+                "A city apartment does not compete with a country estate. Pick the kind of "
+                "your listing; leave empty to compare with everything."
+            ),
         )
-        c3.number_input("Min bedrooms", key=_key("min_bedrooms"), min_value=0)
+        c3.number_input(t("Min bedrooms"), key=_key("min_bedrooms"), min_value=0)
         c4.number_input(
-            "Max bedrooms", key=_key("max_bedrooms"), min_value=0,
-            help="Airbnb has no such filter: it is applied after searching.",
+            t("Max bedrooms"), key=_key("max_bedrooms"), min_value=0,
+            help=t("Airbnb has no such filter: it is applied after searching."),
         )  # fmt: skip
-        c1.number_input("Min bathrooms", key=_key("min_bathrooms"), min_value=0)
-        c2.number_input("Min beds", key=_key("min_beds"), min_value=0)
+        c1.number_input(t("Min bathrooms"), key=_key("min_bathrooms"), min_value=0)
+        c2.number_input(t("Min beds"), key=_key("min_beds"), min_value=0)
         with c3:
-            money_input("Min price / night", key=_key("price_min"), currency=_currency(),
-                        placeholder="No limit")  # fmt: skip
+            money_input(t("Min price / night"), key=_key("price_min"), currency=_currency(),
+                        placeholder=t("No limit"))  # fmt: skip
         with c4:
-            money_input("Max price / night", key=_key("price_max"), currency=_currency(),
-                        placeholder="No limit")  # fmt: skip
+            money_input(t("Max price / night"), key=_key("price_max"), currency=_currency(),
+                        placeholder=t("No limit"))  # fmt: skip
 
 
 def _step_scenarios() -> None:
     with st.container(border=True):
-        st.subheader("4 · Stays to price")
+        st.subheader(t("4 · Stays to price"))
         st.caption(
-            "Prices change with the length of the stay and the season. Each length is "
-            "searched for every check-in date, so more choices mean longer updates."
+            t(
+                "Prices change with the length of the stay and the season. Each length is "
+                "searched for every check-in date, so more choices mean longer updates."
+            )
         )
         st.pills(
-            "Stay lengths (nights)",
+            t("Stay lengths (nights)"),
             DURATION_CHOICES,
             selection_mode="multi",
             key=_key("durations"),
-            help="Pick the stays you sell: 28+ nights shows monthly discounts.",
+            help=t("Pick the stays you sell: 28+ nights shows monthly discounts."),
         )
         c1, c2, c3 = st.columns(3)
         c1.number_input(
-            "First check-in in (days)", key=_key("first_check_in_days"), min_value=0,
-            help="Days from today to the first check-in date sampled.",
+            t("First check-in in (days)"), key=_key("first_check_in_days"), min_value=0,
+            help=t("Days from today to the first check-in date sampled."),
         )  # fmt: skip
         c2.number_input(
-            "One check-in every (days)", key=_key("every_days"), min_value=1,
-            help="30 = one check-in date per month.",
+            t("One check-in every (days)"), key=_key("every_days"), min_value=1,
+            help=t("30 = one check-in date per month."),
         )  # fmt: skip
         c3.number_input(
-            "Look ahead (days)", key=_key("horizon_days"), min_value=1,
-            help="How far into the future to sample. 180 = six months.",
+            t("Look ahead (days)"), key=_key("horizon_days"), min_value=1,
+            help=t("How far into the future to sample. 180 = six months."),
         )  # fmt: skip
 
 
 def _step_comp_set() -> None:
     with st.container(border=True):
-        st.subheader("5 · Comp set size")
+        st.subheader(t("5 · Comp set size"))
         st.caption(
-            "How many of the nearest matching listings to follow closely (amenities, "
-            "availability, minimum stay, reviews)."
+            t(
+                "How many of the nearest matching listings to follow closely (amenities, "
+                "availability, minimum stay, reviews)."
+            )
         )
         c1, c2 = st.columns([1, 2])
         c1.number_input(
-            "Nearest competitors", key=_key("competitors"), min_value=1, max_value=500,
-            help="50 is a good balance between detail and update time.",
+            t("Nearest competitors"), key=_key("competitors"), min_value=1, max_value=500,
+            help=t("50 is a good balance between detail and update time."),
         )  # fmt: skip
         c2.toggle(
-            "Also keep prices of every listing in the area",
+            t("Also keep prices of every listing in the area"),
             key=_key("keep_all_in_search"),
-            help="Wider market percentiles, but only the nearest competitors get full details.",
+            help=t("Wider market percentiles, but only the nearest competitors get full details."),
         )
 
 
 def _advanced() -> None:
-    with st.expander("Advanced settings"):
+    with st.expander(t("Advanced settings")):
         c1, c2, c3 = st.columns(3)
         c1.toggle(
-            "Complete coverage", key=_key("complete_coverage"),
-            help="Splits the area into smaller searches: ~15% more listings, ~2.5× slower.",
+            t("Complete coverage"), key=_key("complete_coverage"),
+            help=t("Splits the area into smaller searches: ~15% more listings, ~2.5× slower."),
         )  # fmt: skip
-        c2.text_input("Currency", key=_key("currency"), max_chars=3)
+        c2.text_input(t("Currency"), key=_key("currency"), max_chars=3)
         c3.number_input(
-            "Pause between requests (s)", key=_key("min_delay_seconds"), min_value=1,
-            step=1, help="Keeps usage moderate. Raise it if many requests fail.",
+            t("Pause between requests (s)"), key=_key("min_delay_seconds"), min_value=1,
+            step=1, help=t("Keeps usage moderate. Raise it if many requests fail."),
         )  # fmt: skip
         c1.number_input(
-            "Refresh listing pages every (days)", key=_key("details_refresh_days"), min_value=1,
-            help="Amenities and descriptions rarely change: weekly is enough.",
+            t("Refresh listing pages every (days)"), key=_key("details_refresh_days"),
+            min_value=1, help=t("Amenities and descriptions rarely change: weekly is enough."),
         )  # fmt: skip
         c2.number_input(
-            "Refresh calendars every (days)", key=_key("calendar_refresh_days"), min_value=1,
-            help="Availability changes fast: every 2–3 days builds a useful history.",
+            t("Refresh calendars every (days)"), key=_key("calendar_refresh_days"), min_value=1,
+            help=t("Availability changes fast: every 2–3 days builds a useful history."),
         )  # fmt: skip
 
 
@@ -243,28 +253,28 @@ def _summary_and_save(raw: dict[str, Any], path: Path) -> None:
     try:
         settings = parse_settings(raw, base_dir=path.resolve().parent)
     except ConfigurationError as error:
-        st.error(f"Please fix this before saving: {error}", icon=":material/error:")
+        st.error(t("Please fix this before saving: {error}", error=error), icon=":material/error:")
         return
 
     run = estimate(settings, len(settings.stays.resolve(date.today())))
     with st.container(border=True):
-        st.subheader("What the next update will do")
+        st.subheader(t("What the next update will do"))
         c1, c2, c3 = st.columns(3)
-        c1.metric("Price searches", run.searches, help="Stay lengths × check-in dates")
-        c2.metric("Listings read in detail", run.listings_to_enrich)
-        c3.metric("Estimated time", f"≈ {run.total_minutes:.0f} min")
-        unsaved = raw != _load_base(path)
+        c1.metric(t("Price searches"), run.searches, help=t("Stay lengths × check-in dates"))
+        c2.metric(t("Listings read in detail"), run.listings_to_enrich)
+        c3.metric(t("Estimated time"), f"≈ {run.total_minutes:.0f} min")
+        unsaved = _differs_from_saved(settings, path)
         if unsaved:
-            st.caption(":orange[You have unsaved changes.]")
+            st.caption(f":orange[{t('You have unsaved changes.')}]")
         go, save, discard = st.columns([2, 1, 3])
-        if go.button("Save and continue", type="primary", icon=":material/arrow_forward:"):
+        if go.button(t("Save and continue"), type="primary", icon=":material/arrow_forward:"):
             save_raw_config(raw, path)
             go_to("collect")
-        if save.button("Save", icon=":material/save:", disabled=not unsaved):
+        if save.button(t("Save"), icon=":material/save:", disabled=not unsaved):
             save_raw_config(raw, path)
-            st.toast("Settings saved.", icon=":material/check_circle:")
+            st.toast(t("Settings saved."), icon=":material/check_circle:")
             st.rerun()
-        if discard.button("Discard changes", type="tertiary", disabled=not unsaved):
+        if discard.button(t("Discard changes"), type="tertiary", disabled=not unsaved):
             _reset_state()
             st.rerun()
 
@@ -273,12 +283,12 @@ def _read_listing() -> None:
     """Button callback: runs before the widgets are drawn, so it may change their values."""
     listing_id = parse_listing_id(st.session_state[_key("listing_id")] or "")
     if not listing_id:
-        _set_feedback("warning", "Paste your Airbnb link or listing ID first.")
+        _set_feedback("warning", t("Paste your Airbnb link or listing ID first."))
         return
     try:
         details = PyAirbnbDetailsGateway().get_details(ListingId(listing_id))
     except GatewayError as error:
-        _set_feedback("error", f"Could not read the listing: {error}")
+        _set_feedback("error", t("Could not read the listing: {error}", error=error))
         return
     st.session_state[_key("listing_id")] = listing_id
     messages = []
@@ -287,11 +297,11 @@ def _read_listing() -> None:
         st.session_state[_key("latitude")] = location.latitude
         st.session_state[_key("longitude")] = location.longitude
         st.session_state[_key("use_url")] = False
-        messages.append("search centred on it")
+        messages.append(t("search centred on it"))
     group = property_group(details.listing.property_type)
     if group is not PropertyGroup.OTHER:
         st.session_state[_key("property_groups")] = [group.value]
-        messages.append(f"comparing with {group.value}s")
+        messages.append(t("comparing with: {kind}", kind=t(group.label)))
     _set_feedback("success", f"“{details.listing.name}”: " + "; ".join(messages) + ".")
 
 
@@ -357,3 +367,12 @@ def _current_values() -> FormValues:
     for name in OPTIONAL_NUMBERS:
         values[name] = values[name] or None  # 0 = no limit
     return FormValues(**values)
+
+
+def _differs_from_saved(settings: AppSettings, path: Path) -> bool:
+    """Compare meanings, not text: a missing key and its default value are the same."""
+    try:
+        saved = parse_settings(_load_base(path), base_dir=path.resolve().parent)
+    except ConfigurationError:
+        return True
+    return settings != saved

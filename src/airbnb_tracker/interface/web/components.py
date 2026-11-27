@@ -7,7 +7,8 @@ from collections.abc import Iterable
 
 import streamlit as st
 
-DEFAULT_NIGHTS = 30
+from airbnb_tracker.interface.web.i18n import t
+from airbnb_tracker.interface.web.preferences import preferences
 
 
 def section(title: str, what: str) -> None:
@@ -16,7 +17,7 @@ def section(title: str, what: str) -> None:
 
 
 def how_to_read(text: str) -> None:
-    with st.expander("How to read this", icon=":material/help:"):
+    with st.expander(t("How to read this"), icon=":material/help:"):
         st.markdown(text)
 
 
@@ -29,15 +30,26 @@ def caveat(text: str) -> None:
     st.caption(f":gray[:material/info: {text}]")
 
 
-def nights_picker(available: Iterable[object], *, key: str, label: str = "Stay length") -> int:
-    """Pick a stay length among those collected (30 nights by default)."""
+def nights_picker(
+    available: Iterable[object],
+    *,
+    key: str,
+    label: str | None = None,
+    preferred: int | None = None,
+) -> int:
+    """Pick a stay length among those collected.
+
+    Starts on ``preferred`` (e.g. the last one used), else the default stay length of
+    Settings, else the longest collected.
+    """
     options = sorted({int(str(n)) for n in available})
-    default = DEFAULT_NIGHTS if DEFAULT_NIGHTS in options else options[-1]
+    candidates = (preferred, preferences().default_nights)
+    default = next((n for n in candidates if n in options), options[-1])
     choice = st.segmented_control(
-        label,
+        label or t("Stay length"),
         options,
         default=default,
-        format_func=lambda n: f"{n} nights",
+        format_func=lambda n: t("{nights} nights", nights=n),
         key=key,
     )
     return int(choice) if choice is not None else default

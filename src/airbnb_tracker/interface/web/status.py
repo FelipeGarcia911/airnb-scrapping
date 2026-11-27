@@ -17,6 +17,8 @@ from airbnb_tracker.infrastructure.config import AppSettings
 from airbnb_tracker.interface.web.context import config_path, settings_or_none
 from airbnb_tracker.interface.web.data import ago, database_version, last_update, sample_status
 from airbnb_tracker.interface.web.estimates import RunEstimate, estimate
+from airbnb_tracker.interface.web.formatting import format_datetime
+from airbnb_tracker.interface.web.i18n import t
 from airbnb_tracker.interface.web.jobs import PHASE_LABELS, Job, JobRunner
 from airbnb_tracker.interface.web.navigation import link
 
@@ -81,36 +83,39 @@ def progress_panel(job: Job, runner: JobRunner, *, key: str, compact: bool = Fal
     for phase in job.phases:
         state = progress.get(phase)
         if state and state.finished and phase != current:
-            steps.append(f":green[✓ {PHASE_LABELS[phase]}]")
+            steps.append(f":green[✓ {t(PHASE_LABELS[phase])}]")
         elif phase == current:
-            steps.append(f"**● {PHASE_LABELS[phase]}**")
+            steps.append(f"**● {t(PHASE_LABELS[phase])}**")
         else:
-            steps.append(f":gray[○ {PHASE_LABELS[phase]}]")
-    st.markdown(f"**{job.label}**" if not compact else job.label)
+            steps.append(f":gray[○ {t(PHASE_LABELS[phase])}]")
+    label = t(job.label)
+    st.markdown(f"**{label}**" if not compact else label)
     st.markdown(("  \n" if compact else "  →  ").join(steps))
 
     state = progress.get(current)
     if state and state.total:
-        st.progress(state.done / state.total, text=f"{state.done} of {state.total}")
+        st.progress(
+            state.done / state.total,
+            text=t("{done} of {total}", done=state.done, total=state.total),
+        )
         st.caption(state.message)
     else:
-        st.progress(0.0, text="Starting…")
-        st.caption("Connecting to Airbnb. The first result can take ~20 seconds.")
+        st.progress(0.0, text=t("Starting…"))
+        st.caption(t("Connecting to Airbnb. The first result can take ~20 seconds."))
 
     left = job.seconds_left()
-    st.caption(
-        f"Elapsed {clock(job.elapsed_seconds())}" + (f" · about {clock(left)} left" if left else "")
-    )
-    if st.button("Stop", icon=":material/stop_circle:", key=f"stop_{key}", width="stretch"):
+    elapsed = t("Elapsed {time}", time=clock(job.elapsed_seconds()))
+    st.caption(elapsed + (t(" · about {time} left", time=clock(left)) if left else ""))
+    if st.button(t("Stop"), icon=":material/stop_circle:", key=f"stop_{key}", width="stretch"):
         runner.stop()
 
 
 def sidebar_status() -> None:
     settings = settings_or_none()
     with st.sidebar.container(border=True):
-        st.markdown("**Market data**")
+        st.markdown(f"**{t('Market data')}**")
         if settings is None:
-            st.caption("Not set up yet. Start with step 1.")
+            st.caption(t("Not set up yet. Start with Set up my market."))
             return
         runner = runner_for(settings)
 
@@ -118,9 +123,9 @@ def sidebar_status() -> None:
             if job and job.running:
                 progress_panel(job, runner, key="sidebar", compact=True)
                 return
-            st.caption(f"Last update: {ago(last_update(settings))}")
+            st.caption(last_update_text(settings))
             _sample_badge(settings)
-            link("collect", "Update data", ":material/sync:")
+            link("collect", t("Update data"), ":material/sync:")
 
         live_job(runner, render)
 
@@ -133,11 +138,22 @@ def _sample_badge(settings: AppSettings) -> None:
     if not searches:
         return
     if failed:
-        st.caption(f":orange[Partial sample: {failed} of {searches} searches failed]")
+        text = t("Partial sample: {failed} of {searches} searches failed",
+                 failed=failed, searches=searches)  # fmt: skip
+        st.caption(f":orange[{text}]")
     elif truncated:
-        st.caption(f":orange[Partial sample: Airbnb truncated {truncated} of {searches} searches]")
+        text = t("Partial sample: Airbnb truncated {truncated} of {searches} searches",
+                 truncated=truncated, searches=searches)  # fmt: skip
+        st.caption(f":orange[{text}]")
     else:
-        st.caption(f":green[Complete sample: {searches} searches]")
+        st.caption(f":green[{t('Complete sample: {searches} searches', searches=searches)}]")
+
+
+def last_update_text(settings: AppSettings) -> str:
+    """ "Last update: 27 nov 2026 15:05 · 2 h ago", in the time zone of Settings."""
+    moment = last_update(settings)
+    when = f"{format_datetime(moment)} · {ago(moment)}" if moment else ago(moment)
+    return t("Last update: {when}", when=when)
 
 
 def clock(seconds: float) -> str:

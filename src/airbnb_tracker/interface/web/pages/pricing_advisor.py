@@ -18,24 +18,27 @@ from airbnb_tracker.interface.web.components import (
 from airbnb_tracker.interface.web.formatting import format_money
 from airbnb_tracker.interface.web.glossary import BASE_RATE, NIGHTLY_AFTER_DISCOUNT, glossary
 from airbnb_tracker.interface.web.guards import require_data, require_settings
+from airbnb_tracker.interface.web.i18n import t
 from airbnb_tracker.interface.web.navigation import go_to
 from airbnb_tracker.interface.web.pages.earnings import (
     CALCULATOR_NIGHTS,
     PENDING_NIGHTLY_AFTER_DISCOUNT,
 )
-from airbnb_tracker.interface.web.theme import CORAL, INK, MUTED
+from airbnb_tracker.interface.web.theme import CORAL, MUTED, TEAL
 
 _GO_TO_CALCULATOR = "_go_to_calculator"
 _EFFECT = {1: "▲ raises", 0: "— neutral", -1: "▼ lowers"}
 
 
 def render() -> None:
-    st.title("Pricing advisor")
-    st.caption("Pricing")
+    st.title(t("Pricing advisor"))
+    st.caption(t("Pricing"))
     st.markdown(
-        "A suggested nightly rate for **your** listing, based on the competitors most like "
-        "it, then nudged by what makes yours stronger or weaker. Use it as a starting point "
-        "for reopening or repricing, not as an automatic price."
+        t(
+            "A suggested nightly rate for **your** listing, based on the competitors most like "
+            "it, then nudged by what makes yours stronger or weaker. Use it as a starting point "
+            "for reopening or repricing, not as an automatic price."
+        )
     )
     glossary()
     settings = require_settings()
@@ -48,25 +51,33 @@ def render() -> None:
     listings, pricing = data.listings, data.tables["pricing_snapshots"]
     mine = analytics.my_listing(listings)
     if mine is None:
-        st.warning("Add your listing in step 1 so the advisor knows what to compare.")
+        st.warning(t("Add your listing in step 1 so the advisor knows what to compare."))
         return
 
     with st.container(border=True):
         st.markdown(
-            f"**Your listing:** {mine['title']} · {_layout(mine)} · rating "
-            f"{mine['rating'] if pd.notna(mine['rating']) else '—'} "
-            f"({int(mine['review_count'])} reviews)"
+            t(
+                "**Your listing:** {title} · {layout} · rating {rating} ({reviews} reviews)",
+                title=mine["title"],
+                layout=_layout(mine),
+                rating=mine["rating"] if pd.notna(mine["rating"]) else "—",
+                reviews=int(mine["review_count"]),
+            )
         )
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
             nights = nights_picker(pricing["nights"].unique(), key="advisor_nights")
-        max_km = c2.slider("Max distance (km)", 1, int(max(settings.search.radius_km, 1)),
+        max_km = c2.slider(t("Max distance (km)"), 1, int(max(settings.search.radius_km, 1)),
                            min(3, int(settings.search.radius_km)), key="advisor_km")  # fmt: skip
         same_bedrooms = c3.toggle(
-            f"Same bedrooms ({_int(mine['bedrooms'])})", value=True, key="advisor_bedrooms"
+            t("Same bedrooms ({count})", count=_int(mine["bedrooms"])),
+            value=True,
+            key="advisor_bedrooms",
         )
         same_baths = c3.toggle(
-            f"At least {_int(mine['bathrooms'])} bathrooms", value=True, key="advisor_baths"
+            t("At least {count} bathrooms", count=_int(mine["bathrooms"])),
+            value=True,
+            key="advisor_baths",
         )
 
     nightly = analytics.nightly_by_listing(pricing, nights)
@@ -82,8 +93,12 @@ def render() -> None:
     advice = analytics.advise_price(listings, comps, nights)
     if advice is None:
         st.warning(
-            f"Only {len(comps)} comparables match. Widen the distance or relax the filters "
-            f"(at least {analytics.MIN_COMPARABLES} are needed)."
+            t(
+                "Only {count} comparables match. Widen the distance or relax the filters "
+                "(at least {needed} are needed).",
+                count=len(comps),
+                needed=analytics.MIN_COMPARABLES,
+            )
         )
         return
 
@@ -101,69 +116,102 @@ def _context(advice: analytics.PriceAdvice, nightly: pd.Series, currency: str) -
     if market:
         gap = (advice.median / market - 1) * 100
         if abs(gap) >= 15:
-            direction = "more" if gap > 0 else "less"
-            st.caption(
-                f":material/info: Your closest comparables charge **{abs(gap):.0f}% {direction}** "
-                f"than the comp set overall (median {format_money(advice.median, currency)} vs "
-                f"{format_money(market, currency)}): listings like yours (same bedrooms, "
+            text = (
+                "Your closest comparables charge **{gap:.0f}% more** than the comp set "
+                "overall (median {median} vs {market}): listings like yours (same bedrooms, "
+                "bathrooms and area) are a different price tier. Relax the filters above to "
+                "compare with the wider market."
+                if gap > 0
+                else "Your closest comparables charge **{gap:.0f}% less** than the comp set "
+                "overall (median {median} vs {market}): listings like yours (same bedrooms, "
                 "bathrooms and area) are a different price tier. Relax the filters above to "
                 "compare with the wider market."
             )
+            message = t(
+                text,
+                gap=abs(gap),
+                median=format_money(advice.median, currency),
+                market=format_money(market, currency),
+            )
+            st.caption(f":material/info: {message}")
     if len(advice.comparables) < analytics.CONFIDENT_COMPARABLES:
-        st.caption(
-            f":orange[:material/warning: Only {len(advice.comparables)} comparables: a single "
-            "listing moves the percentiles a lot. Widen the distance for a steadier estimate.]"
+        message = t(
+            "Only {count} comparables: a single listing moves the percentiles a lot. Widen "
+            "the distance for a steadier estimate.",
+            count=len(advice.comparables),
         )
+        st.caption(f":orange[:material/warning: {message}]")
 
 
 def _headline(advice: analytics.PriceAdvice, currency: str, my_discount: float) -> None:
     section(
-        "Suggested rate",
-        f"From {len(advice.comparables)} comparables, {advice.nights}-night stays.",
+        t("Suggested rate"),
+        t(
+            "From {count} comparables, {nights}-night stays.",
+            count=len(advice.comparables),
+            nights=advice.nights,
+        ),
     )
     base = base_for_effective(advice.suggested, my_discount)
     c1, c2, c3 = st.columns(3)
     c1.metric(
-        f"Suggested {NIGHTLY_AFTER_DISCOUNT.lower()}",
+        t("Suggested nightly after discount"),
         format_money(advice.suggested, currency),
-        help=f"Percentile {advice.target_percentile} of comparables",
+        help=t("Percentile {pct} of comparables", pct=advice.target_percentile),
     )
     c2.metric(
-        BASE_RATE,
+        t(BASE_RATE),
         format_money(base, currency),
-        help=f"What to publish so that your {my_discount:g}% discount for {advice.nights}-night "
-        "stays brings it to the suggested price (set your discounts in Set up my market).",
+        help=t(
+            "What to publish so that your {discount:g}% discount for {nights}-night stays "
+            "brings it to the suggested price (set your discounts in Set up my market).",
+            discount=my_discount,
+            nights=advice.nights,
+        ),
     )
     c3.metric(
-        "Competitive range",
+        t("Competitive range"),
         f"{format_money(advice.p25, currency)} – {format_money(advice.p75, currency)}",
-        help="P25–P75 of comparables: half of them charge within this range.",
+        help=t("P25–P75 of comparables: half of them charge within this range."),
     )
     position = (
-        "upper half" if advice.target_percentile > 50
-        else "lower half" if advice.target_percentile < 50 else "middle"
+        t("upper half") if advice.target_percentile > 50
+        else t("lower half") if advice.target_percentile < 50 else t("middle")
     )  # fmt: skip
+    monthly = (
+        t("(≈ **{monthly}** per month) ", monthly=format_money(advice.monthly, currency))
+        if advice.monthly
+        else ""
+    )
     insight(
-        f"Aim for **{format_money(advice.suggested, currency)}** "
-        f"{NIGHTLY_AFTER_DISCOUNT.lower()} "
-        + (f"(≈ **{format_money(advice.monthly, currency)}** per month) " if advice.monthly else "")
-        + f"to sit in the **{position}** of your comparables (percentile "
-        f"{advice.target_percentile}). Staying between {format_money(advice.p25, currency)} "
-        f"and {format_money(advice.p75, currency)} keeps you competitive. With your "
-        f"{my_discount:g}% discount, publish a {BASE_RATE.lower()} of "
-        f"**{format_money(base, currency)}**."
+        t(
+            "Aim for **{suggested}** nightly after discount {monthly}to sit in the "
+            "**{position}** of your comparables (percentile {pct}). Staying between {p25} "
+            "and {p75} keeps you competitive. With your {discount:g}% discount, publish a "
+            "base nightly rate of **{base}**.",
+            suggested=format_money(advice.suggested, currency),
+            monthly=monthly,
+            position=position,
+            pct=advice.target_percentile,
+            p25=format_money(advice.p25, currency),
+            p75=format_money(advice.p75, currency),
+            discount=my_discount,
+            base=format_money(base, currency),
+        )
     )
 
 
 def _percentile_explorer(advice: analytics.PriceAdvice, currency: str) -> None:
     section(
-        "Explore other positions",
-        "Pick a percentile to see the nightly price that puts you there: P20 means 20% of "
-        "comparables are cheaper than you, P80 means 80% are.",
+        t("Explore other positions"),
+        t(
+            "Pick a percentile to see the nightly price that puts you there: P20 means 20% of "
+            "comparables are cheaper than you, P80 means 80% are."
+        ),
     )
     prices = advice.comparables["nightly"]
     chosen = st.slider(
-        "Percentile",
+        t("Percentile"),
         min_value=5,
         max_value=95,
         value=advice.target_percentile,
@@ -174,34 +222,41 @@ def _percentile_explorer(advice: analytics.PriceAdvice, currency: str) -> None:
     price = float(prices.quantile(chosen / 100))
     cheaper = int((prices < price).sum())
     c1, c2, c3 = st.columns(3)
-    c1.metric(f"{NIGHTLY_AFTER_DISCOUNT} at P{chosen}", format_money(price, currency),
-              delta=f"{(price / advice.suggested - 1) * 100:+.0f}% vs suggested",
-              delta_color="off")  # fmt: skip
+    c1.metric(
+        t("{label} at P{pct}", label=t(NIGHTLY_AFTER_DISCOUNT), pct=chosen),
+        format_money(price, currency),
+        delta=t("{gap:+.0f}% vs suggested", gap=(price / advice.suggested - 1) * 100),
+        delta_color="off",
+    )
     if advice.nights >= analytics.MONTHLY_STAY_NIGHTS:
-        c2.metric("Monthly equivalent", format_money(price * 30, currency))
-    c3.metric("Comparables cheaper than this", f"{cheaper} of {len(prices)}")
+        c2.metric(t("Monthly equivalent"), format_money(price * 30, currency))
+    c3.metric(
+        t("Comparables cheaper than this"),
+        t("{count} of {total}", count=cheaper, total=len(prices)),
+    )
 
     st.altair_chart(_position_chart(advice, chosen, price, currency), width="stretch")
 
+    nightly_column, monthly_column = t("Nightly price"), t("Monthly")
     ladder = pd.DataFrame(
         {
-            "Percentile": [f"P{p}" for p in range(10, 100, 10)],
-            "Nightly price": [round(float(prices.quantile(p / 100))) for p in range(10, 100, 10)],
+            t("Percentile"): [f"P{p}" for p in range(10, 100, 10)],
+            nightly_column: [round(float(prices.quantile(p / 100))) for p in range(10, 100, 10)],
         }
     )
     if advice.nights >= analytics.MONTHLY_STAY_NIGHTS:
-        ladder["Monthly"] = ladder["Nightly price"] * 30
-    with st.expander("Price at every 10th percentile"):
+        ladder[monthly_column] = ladder[nightly_column] * 30
+    with st.expander(t("Price at every 10th percentile")):
         amount = st.column_config.NumberColumn(format="localized")
         st.dataframe(ladder, hide_index=True, width="stretch",
-                     column_config={"Nightly price": amount, "Monthly": amount})  # fmt: skip
+                     column_config={nightly_column: amount, monthly_column: amount})  # fmt: skip
 
     st.button(
-        f"Calculate earnings at {format_money(price, currency)}",
+        t("Calculate earnings at {price}", price=format_money(price, currency)),
         icon=":material/calculate:",
         on_click=_send_to_calculator,
         args=(round(price), advice.nights),
-        help="Opens the earnings calculator with this price and stay length.",
+        help=t("Opens the earnings calculator with this price and stay length."),
     )
     if st.session_state.pop(_GO_TO_CALCULATOR, False):
         go_to("earnings")
@@ -220,18 +275,28 @@ def _position_chart(
         alt.Chart(comps)
         .mark_tick(thickness=2, size=34, color=MUTED)
         .encode(
-            x=alt.X("nightly:Q", title=f"Nightly price ({currency})", scale=alt.Scale(zero=False)),
-            tooltip=["title", alt.Tooltip("nightly:Q", format=",.0f")],
+            x=alt.X(
+                "nightly:Q",
+                title=t("Nightly price ({currency})", currency=currency),
+                scale=alt.Scale(zero=False),
+            ),
+            tooltip=[
+                alt.Tooltip("title:N", title=t("Listing")),
+                alt.Tooltip("nightly:Q", title=t("Nightly price"), format=",.0f"),
+            ],
         )
     )
     markers = pd.DataFrame(
         {
             "price": [advice.suggested, price],
-            "label": [f"▼ Suggested · P{advice.target_percentile}", f"▲ Your choice · P{chosen}"],
+            "label": [
+                t("▼ Suggested · P{pct}", pct=advice.target_percentile),
+                t("▲ Your choice · P{pct}", pct=chosen),
+            ],
             "who": ["suggested", "chosen"],
         }
     )
-    colors = alt.Scale(domain=["suggested", "chosen"], range=[CORAL, INK])
+    colors = alt.Scale(domain=["suggested", "chosen"], range=[CORAL, TEAL])
     rules = (
         alt.Chart(markers)
         .mark_rule(strokeWidth=3)
@@ -255,21 +320,21 @@ def _send_to_calculator(price: int, nights: int) -> None:
 
 
 def _signals(advice: analytics.PriceAdvice) -> None:
-    section("Why this percentile",
-            "Starts at the median (P50); each strength moves it up 8 percentiles, each "
-            "weakness down 8, within P25–P75.")  # fmt: skip
+    section(t("Why this percentile"),
+            t("Starts at the median (P50); each strength moves it up 8 percentiles, each "
+              "weakness down 8, within P25–P75."))  # fmt: skip
     if not advice.signals:
-        st.caption("Not enough information about your listing to adjust the median.")
+        st.caption(t("Not enough information about your listing to adjust the median."))
         return
     table = pd.DataFrame(
         [
-            {"Factor": s.factor, "Yours": s.yours, "Comparables (typical)": s.comparables,
-             "Effect": _EFFECT[s.effect]}
+            {t("Factor"): t(s.factor), t("Yours"): s.yours,
+             t("Comparables (typical)"): s.comparables, t("Effect"): t(_EFFECT[s.effect])}
             for s in advice.signals
         ]
     )  # fmt: skip
     st.dataframe(table, hide_index=True, width="stretch")
-    caveat("Rules are simple and transparent on purpose: adjust them with your own judgement.")
+    caveat(t("Rules are simple and transparent on purpose: adjust them with your own judgement."))
 
 
 def _seasonal(pricing: pd.DataFrame, advice: analytics.PriceAdvice, currency: str) -> None:
@@ -277,64 +342,87 @@ def _seasonal(pricing: pd.DataFrame, advice: analytics.PriceAdvice, currency: st
                                       advice.suggested)  # fmt: skip
     if table.empty:
         return
+    factors = analytics.by_label(table["Season factor"])
     section(
-        "Suggested rate by check-in date",
-        "The same rate adjusted to how comparables price each check-in date (season factor "
-        "= that date's median ÷ the overall median).",
+        t("Suggested rate by check-in date"),
+        t(
+            "The same rate adjusted to how comparables price each check-in date (season factor "
+            "= that date's median ÷ the overall median)."
+        ),
     )
+    view = table.rename(columns=t).rename_axis(t(str(table.index.name)))
     amount = st.column_config.NumberColumn(format="localized")
     st.dataframe(
-        table,
+        view,
         width="stretch",
         column_config={
-            "Comparables priced": st.column_config.NumberColumn(
-                help="Comparables still available, and so priced, for that check-in."
+            t("Comparables priced"): st.column_config.NumberColumn(
+                help=t("Comparables still available, and so priced, for that check-in.")
             ),
-            "Comparables median": amount,
-            f"Suggested {NIGHTLY_AFTER_DISCOUNT.lower()}": amount,
-            "Suggested monthly": amount,
+            t("Comparables median"): amount,
+            t("Suggested nightly after discount"): amount,
+            t("Suggested monthly"): amount,
         },
     )
-    factors = analytics.by_label(table["Season factor"])
     high, low = max(factors, key=factors.__getitem__), min(factors, key=factors.__getitem__)
     insight(
-        f"Check-ins around **{high}** support the highest rate "
-        f"({factors[high]:.2f}× the median); around **{low}** the lowest ({factors[low]:.2f}×)."
+        t(
+            "Check-ins around **{high}** support the highest rate ({high_factor:.2f}× the "
+            "median); around **{low}** the lowest ({low_factor:.2f}×).",
+            high=high,
+            high_factor=factors[high],
+            low=low,
+            low_factor=factors[low],
+        )
     )
     caveat(
-        "In busy periods the best listings are already booked, so the ones still available "
-        "(and priced) are often cheaper. Few comparables priced on a date means a weaker signal."
+        t(
+            "In busy periods the best listings are already booked, so the ones still "
+            "available (and priced) are often cheaper. Few comparables priced on a date means "
+            "a weaker signal."
+        )
     )
 
 
 def _comparables_table(advice: analytics.PriceAdvice) -> None:
-    with st.expander(f"The {len(advice.comparables)} comparables used"):
-        view = advice.comparables[["title", "distance_km", "bedrooms", "bathrooms", "rating",
-                                   "review_count", "nightly", "url"]].rename(
-            columns={"title": "Listing", "distance_km": "Km", "bedrooms": "Bedrooms",
-                     "bathrooms": "Baths", "rating": "Rating", "review_count": "Reviews",
-                     "nightly": "Nightly", "url": "Airbnb"}
-        )  # fmt: skip
+    with st.expander(t("The {count} comparables used", count=len(advice.comparables))):
+        names = {
+            "title": t("Listing"),
+            "distance_km": t("Km"),
+            "bedrooms": t("Bedrooms"),
+            "bathrooms": t("Baths"),
+            "rating": t("Rating"),
+            "review_count": t("Reviews"),
+            "nightly": t("Nightly"),
+            "url": "Airbnb",
+        }
+        view = advice.comparables[list(names)].rename(columns=names)
         st.dataframe(
-            view.sort_values("Nightly"),
+            view.sort_values(names["nightly"]),
             hide_index=True,
             width="stretch",
             column_config={
-                "Nightly": st.column_config.NumberColumn(format="localized"),
-                "Km": st.column_config.NumberColumn(format="%.1f"),
-                "Airbnb": st.column_config.LinkColumn(display_text="Open"),
+                names["nightly"]: st.column_config.NumberColumn(format="localized"),
+                names["distance_km"]: st.column_config.NumberColumn(format="%.1f"),
+                "Airbnb": st.column_config.LinkColumn(display_text=t("Open")),
             },
         )
     how_to_read(
-        "- **Comparables**: priced listings within the distance, with your bedrooms and at "
-        "least your bathrooms (toggle to relax).\n"
-        "- **Nightly** is each comparable's median across the check-in dates searched.\n"
-        "- **Prices exclude cleaning fees and taxes**, like everywhere in this app."
+        t(
+            "- **Comparables**: priced listings within the distance, with your bedrooms and "
+            "at least your bathrooms (toggle to relax).\n"
+            "- **Nightly** is each comparable's median across the check-in dates searched.\n"
+            "- **Prices exclude cleaning fees and taxes**, like everywhere in this app."
+        )
     )
 
 
 def _layout(mine: pd.Series) -> str:
-    return f"{_int(mine['bedrooms'])} bedrooms · {_int(mine['bathrooms'])} baths"
+    return t(
+        "{bedrooms} bedrooms · {baths} baths",
+        bedrooms=_int(mine["bedrooms"]),
+        baths=_int(mine["bathrooms"]),
+    )
 
 
 def _int(value: object) -> str:
