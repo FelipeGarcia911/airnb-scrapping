@@ -150,8 +150,10 @@ class EnrichListingsUseCase:
             EnrichPart.DETAILS: {
                 i: p.captured_at for i, p in self._repos.profiles.latest_profiles().items()
             },
-            EnrichPart.CALENDARS: {
-                i: c.captured_at for i, c in self._repos.calendars.latest_calendars().items()
+            EnrichPart.CALENDARS: {  # a calendar with no known day is refetched
+                i: c.captured_at
+                for i, c in self._repos.calendars.latest_calendars().items()
+                if any(day.is_known for day in c.days)
             },
             EnrichPart.REVIEWS: self._repos.reviews.latest_review_fetches(),
         }

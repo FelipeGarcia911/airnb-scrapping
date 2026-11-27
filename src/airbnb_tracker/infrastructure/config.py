@@ -217,8 +217,8 @@ def _parse_search(raw: Mapping[str, Any]) -> SearchSettings:
             min_bedrooms=_opt(int, raw.get("min_bedrooms")),
             min_beds=_opt(int, raw.get("min_beds")),
             min_bathrooms=_opt(int, raw.get("min_bathrooms")),
-            price_min=_opt(int, raw.get("price_min")),
-            price_max=_opt(int, raw.get("price_max")),
+            price_min=_opt(int, raw.get("price_min")) or None,  # 0 = no limit
+            price_max=_opt(int, raw.get("price_max")) or None,
         ),
         max_bedrooms=_opt(int, raw.get("max_bedrooms")),
         min_rating=_opt(float, raw.get("min_rating")),

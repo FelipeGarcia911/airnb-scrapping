@@ -7,21 +7,34 @@ from __future__ import annotations
 
 import inspect
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pyairbnb
 import pytest
-from tests.conftest import CENTER, NOW, FixedClock
+from tests.conftest import CENTER, NOW, FixedClock, make_listing
 
-from airbnb_tracker.application.dto import FailureKind, SearchConditions, SearchStatus
-from airbnb_tracker.application.use_cases import ScanMarketCommand, ScanMarketUseCase
+from airbnb_tracker.application.dto import (
+    FailureKind,
+    SearchConditions,
+    SearchFilters,
+    SearchStatus,
+)
+from airbnb_tracker.application.use_cases import (
+    EnrichCommand,
+    EnrichGateways,
+    EnrichListingsUseCase,
+    EnrichPart,
+    EnrichRepositories,
+    ScanMarketCommand,
+    ScanMarketUseCase,
+)
 from airbnb_tracker.application.use_cases.scan_market import ScanSummary
-from airbnb_tracker.domain.entities import ListingOffer
+from airbnb_tracker.domain.entities import ListingOffer, Snapshot
 from airbnb_tracker.domain.price_reading import Exclusion
-from airbnb_tracker.domain.profile import CalendarSnapshot
+from airbnb_tracker.domain.profile import AvailabilitySummary, CalendarDay, CalendarSnapshot
 from airbnb_tracker.domain.value_objects import ListingId, StayPeriod
 from airbnb_tracker.infrastructure.airbnb.gateways import (
     PyAirbnbCalendarGateway,
@@ -222,3 +235,74 @@ def test_pyairbnb_still_accepts_our_arguments(function: Any, arguments: set[str]
     parameters = inspect.signature(function).parameters
     accepts_any = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
     assert accepts_any or arguments <= set(parameters)
+
+
+# --- price range and calendars after a real collection ------------------------------
+
+
+class RecordingClient(SavedResponses):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.search_kwargs: dict[str, Any] = {}
+
+    def search_all(self, **kwargs: Any) -> RawSearch:
+        self.search_kwargs = kwargs
+        return super().search_all(**kwargs)
+
+
+def test_price_range_is_per_night_for_every_stay_length() -> None:
+    """Airbnb compares its price filter with monthly prices from 28 nights on, which
+    emptied every 30- and 90-night search. The range is applied here, per night."""
+    month = StayPeriod(date(2027, 1, 15), date(2027, 2, 14))  # 30 nights
+    amounts = (3_000_000, 4_500_000, 9_000_000)  # 100k, 150k and 300k a night
+    rows = fixture("search_page.json")[:3]
+    monthly = [
+        {**row, "price": {"unit": {"qualifier": "monthly", "amount": amount}}}
+        for row, amount in zip(rows, amounts, strict=True)
+    ]
+    client = RecordingClient(search=monthly)
+    repo = InMemoryRepository()
+    filters = SearchFilters(price_min=0, price_max=200_000)
+    command = ScanMarketCommand(
+        stays=[month], currency="COP", conditions=CONDITIONS, filters=filters, center=CENTER,
+        radius_km=3,
+    )  # fmt: skip
+    gateway = PyAirbnbSearchGateway(FixedClock(), client=client)
+    summary = ScanMarketUseCase(gateway, repo, repo, FixedClock()).execute(command)[0]
+    assert "price_min" not in client.search_kwargs and "price_max" not in client.search_kwargs
+    assert (summary.counts.kept, summary.counts.filtered_out) == (2, 1)  # 100k, 150k kept; 300k out
+
+
+def test_calendar_without_known_days_is_read_again() -> None:
+    repo = InMemoryRepository()
+    listing = ListingId("1001")
+    repo.add(Snapshot(NOW, STAY, "COP", 2, (ListingOffer(make_listing("1001")),),
+                      search_id="s", conditions_key=CONDITIONS.key))  # fmt: skip
+    unknown = tuple(CalendarDay(date(2027, 1, d), None) for d in range(1, 10))
+    repo.save_calendar(CalendarSnapshot(listing, NOW, unknown))  # stored before three states
+    use_case = EnrichListingsUseCase(
+        EnrichGateways(
+            details=PyAirbnbDetailsGateway(client=SavedResponses()),
+            calendars=PyAirbnbCalendarGateway(client=SavedResponses()),
+            reviews=PyAirbnbReviewGateway(client=SavedResponses()),
+        ),
+        EnrichRepositories(snapshots=repo, profiles=repo, calendars=repo, reviews=repo),
+        FixedClock(),
+    )
+    command = EnrichCommand(stays=[STAY], conditions_key=CONDITIONS.key,
+                            parts=frozenset({EnrichPart.CALENDARS}))  # fmt: skip
+    assert use_case.execute(command).fetched[EnrichPart.CALENDARS] == 1  # despite being fresh
+    assert use_case.execute(command).fetched[EnrichPart.CALENDARS] == 0  # now it has known days
+
+
+def test_availability_rate_and_coverage_share_one_base() -> None:
+    known = CalendarSnapshot(
+        ListingId("1"),
+        NOW,
+        tuple(CalendarDay((NOW + timedelta(days=d)).date(), d % 2 == 0) for d in range(10)),
+    )
+    unknown = CalendarSnapshot(ListingId("2"), NOW, tuple(
+        CalendarDay((NOW + timedelta(days=d)).date(), None) for d in range(10)))  # fmt: skip
+    summary = AvailabilitySummary.from_calendars([known, unknown], window_days=10)
+    assert summary.listings_measured == 1 and summary.without_known_days == 1
+    assert summary.median_unavailable_pct == 50.0 and summary.median_coverage_pct == 100.0

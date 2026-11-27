@@ -143,7 +143,12 @@ class ScanMarketUseCase:
             return summary
 
         unique = _unique(result.offers)
-        competitors = [o for o in unique if is_competitor.is_satisfied_by(o.listing)]
+        competitors = [
+            o
+            for o in unique
+            if is_competitor.is_satisfied_by(o.listing)
+            and (o.quote is None or command.filters.allows_nightly(o.quote.nightly.amount))
+        ]
         kept = _nearest(competitors, command.center, command.max_listings)
         self._snapshots.add(
             Snapshot(

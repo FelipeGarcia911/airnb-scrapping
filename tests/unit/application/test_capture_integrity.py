@@ -6,7 +6,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -31,11 +31,13 @@ from airbnb_tracker.application.use_cases import (
     ScanMarketUseCase,
 )
 from airbnb_tracker.application.use_cases.scan_market import ScanSummary
+from airbnb_tracker.domain.entities import Snapshot
 from airbnb_tracker.domain.price_reading import Exclusion, PriceUnit
-from airbnb_tracker.domain.value_objects import StayPeriod
+from airbnb_tracker.domain.profile import CalendarDay, CalendarSnapshot
+from airbnb_tracker.domain.value_objects import ListingId, StayPeriod
 from airbnb_tracker.infrastructure.airbnb.mappers import SearchResultMapper
 from airbnb_tracker.infrastructure.airbnb.text_parsing import parse_qualifier
-from airbnb_tracker.infrastructure.persistence import SqliteRepository
+from airbnb_tracker.infrastructure.persistence import InMemoryRepository, SqliteRepository
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "search_result.json"
 STAY = StayPeriod(date(2027, 1, 15), date(2027, 1, 22))  # 7 nights
@@ -255,3 +257,24 @@ def test_older_captures_without_units_never_enter_statistics(tmp_path: Path) -> 
     offer = snapshot.offers[0]
     assert offer.quote is None
     assert offer.rejected is not None and offer.rejected.exclusion is Exclusion.NOT_RECORDED
+
+
+def test_availability_only_counts_listings_of_the_current_sample() -> None:
+    """Calendars of listings seen under other conditions never weigh in."""
+    repo, clock = InMemoryRepository(), FixedClock()
+    key = conditions(2).key
+    offer = SearchResultMapper("COP").to_offer(raw_result("1", 700_000, "for 7 nights"), STAY, NOW)
+    assert offer is not None
+    repo.add(Snapshot(NOW, STAY, "COP", 2, (offer,), search_id="s", conditions_key=key))
+    days = [(NOW + timedelta(days=d)).date() for d in range(10)]
+    repo.save_calendar(
+        CalendarSnapshot(ListingId("1"), NOW, tuple(CalendarDay(d, True) for d in days))
+    )
+    repo.save_calendar(
+        CalendarSnapshot(ListingId("99"), NOW, tuple(CalendarDay(d, False) for d in days))
+    )
+    bundle = BuildMarketReportUseCase(repo, repo, clock).execute(
+        BuildReportQuery(stays=[STAY], conditions_key=key, availability_window_days=10)
+    )
+    assert bundle.availability.listings_measured == 1
+    assert bundle.availability.median_unavailable_pct == 0.0

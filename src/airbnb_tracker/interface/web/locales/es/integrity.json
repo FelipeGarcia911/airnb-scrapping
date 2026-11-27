@@ -33,5 +33,6 @@
     "Sample effect": "Efecto de muestra",
     "Duplicates": "Duplicados",
     "Outside area or filters": "Fuera de zona o filtros",
-    "Beyond the limit": "Fuera del límite"
+    "Beyond the limit": "Fuera del límite",
+    "Per night, for every stay length: applied to each price after reading its unit (Airbnb's own filter compares monthly prices from 28 nights on). Empty = no limit.": "Por noche, para cualquier duración: se aplica a cada precio después de leer su unidad (el filtro propio de Airbnb compara precios mensuales desde 28 noches). Vacío = sin límite."
 }

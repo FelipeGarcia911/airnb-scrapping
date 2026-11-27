@@ -149,9 +149,7 @@ class PyAirbnbSearchGateway:
             min_bedrooms=filters.min_bedrooms,
             min_beds=filters.min_beds,
             min_bathrooms=filters.min_bathrooms,
-            price_min=filters.price_min,
-            price_max=filters.price_max,
-            complete=self._complete_coverage,
+            complete=self._complete_coverage,  # price range: applied after reading units
         )
 
 

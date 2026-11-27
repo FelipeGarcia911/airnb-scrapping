@@ -80,6 +80,7 @@ def _availability(bundle: ReportBundle) -> list[str]:
     availability = bundle.availability
     if not availability.listings_measured:
         return ["No calendars yet: run `enrich` to measure availability and minimum stay."]
+    pending = availability.without_known_days
     lines = [
         f"Calendars of {availability.listings_measured} competitors "
         f"(next {bundle.availability_window_days} days):",
@@ -87,6 +88,8 @@ def _availability(bundle: ReportBundle) -> list[str]:
         f"median {availability.median_unavailable_pct:.0f}% of the days with known status "
         f"(median coverage {availability.median_coverage_pct or 0:.0f}%)",
     ]
+    if pending:
+        lines.append(f"  {pending} more calendars have no known days in the window: left out")
     if availability.median_min_nights is not None:
         lines.append(f"  Minimum stay: median {availability.median_min_nights:g} nights")
     if bundle.my_unavailable_pct is not None:

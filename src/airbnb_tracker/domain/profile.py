@@ -107,23 +107,26 @@ class CalendarSnapshot:
 class AvailabilitySummary:
     """Market-level view of calendars: approximate occupancy and minimum stays."""
 
-    listings_measured: int
+    listings_measured: int  # calendars with at least one known day
     median_unavailable_pct: float | None
     median_min_nights: float | None
-    median_coverage_pct: float | None = None
+    median_coverage_pct: float | None = None  # over the measured calendars
+    without_known_days: int = 0  # calendars left out: nothing known in the window
 
     @classmethod
     def from_calendars(
         cls, calendars: Sequence[CalendarSnapshot], window_days: int
     ) -> AvailabilitySummary:
-        rates = [r for c in calendars if (r := c.unavailable_pct(window_days)) is not None]
-        stays = [m for c in calendars if (m := c.typical_min_nights(window_days)) is not None]
-        coverage = [c.coverage_pct(window_days) for c in calendars]
+        measured = [c for c in calendars if c.unavailable_pct(window_days) is not None]
+        rates = [c.unavailable_pct(window_days) or 0.0 for c in measured]
+        coverage = [c.coverage_pct(window_days) for c in measured]
+        stays = [m for c in measured if (m := c.typical_min_nights(window_days)) is not None]
         return cls(
-            listings_measured=len(rates),
+            listings_measured=len(measured),
             median_unavailable_pct=round(statistics.median(rates), 1) if rates else None,
             median_min_nights=statistics.median(stays) if stays else None,
             median_coverage_pct=round(statistics.median(coverage), 1) if coverage else None,
+            without_known_days=len(calendars) - len(measured),
         )
 
 

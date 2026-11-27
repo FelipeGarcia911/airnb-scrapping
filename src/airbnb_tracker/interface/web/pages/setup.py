@@ -169,10 +169,17 @@ def _step_filters() -> None:
         c2.number_input(t("Min beds"), key=_key("min_beds"), min_value=0)
         with c3:
             money_input(t("Min price / night"), key=_key("price_min"), currency=_currency(),
-                        placeholder=t("No limit"))  # fmt: skip
+                        placeholder=t("No limit"), help=_price_range_help())  # fmt: skip
         with c4:
             money_input(t("Max price / night"), key=_key("price_max"), currency=_currency(),
-                        placeholder=t("No limit"))  # fmt: skip
+                        placeholder=t("No limit"), help=_price_range_help())  # fmt: skip
+
+
+def _price_range_help() -> str:
+    return t(
+        "Per night, for every stay length: applied to each price after reading its unit "
+        "(Airbnb's own filter compares monthly prices from 28 nights on). Empty = no limit."
+    )
 
 
 def _step_scenarios() -> None:

@@ -116,8 +116,8 @@ def to_raw(values: FormValues, base: dict[str, Any]) -> dict[str, Any]:
             "max_bedrooms": values.max_bedrooms,
             "min_bathrooms": values.min_bathrooms,
             "min_beds": values.min_beds,
-            "price_min": values.price_min,
-            "price_max": values.price_max,
+            "price_min": values.price_min or None,  # 0 = no limit
+            "price_max": values.price_max or None,
             "property_groups": list(values.property_groups) or None,
         }
     )

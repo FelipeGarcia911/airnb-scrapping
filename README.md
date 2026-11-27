@@ -369,6 +369,9 @@ Genuine deep discounts (≥ 40%) are real offers and stay in; the Data quality p
   Treat it as an approximation of occupancy. Days whose status Airbnb does not state are
   *unknown*: they stay out of the rate and lower the calendar coverage that is reported
   with it.
+- **The price range is per night and applied by the tool**, after reading each price's unit.
+  It is not sent to Airbnb, whose filter compares *monthly* prices from 28 nights on and
+  would empty long-stay searches.
 - **Stay lengths are compared on the same listings** and check-in dates; the prices page
   says how many matched and how much of a plain-median difference is only a sample effect.
 - **Outliers** are detected automatically (see above); when analysing the CSV files

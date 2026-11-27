@@ -210,6 +210,8 @@ def _analysable(raw: dict[str, pd.DataFrame], key: str) -> dict[str, pd.DataFram
     """What the analysis may use (exports keep everything in ``raw_tables``):
 
     * prices captured under the current search conditions, from searches that did not fail;
+    * listings, calendars and reviews of the listings in those captures (and yours), so
+      listings seen under other conditions never weigh in;
     * calendar availability as 1 / 0 / NaN, so unknown days drop out of every average.
     """
     tables = dict(raw)
@@ -227,6 +229,14 @@ def _analysable(raw: dict[str, pd.DataFrame], key: str) -> dict[str, pd.DataFram
         failed = set(runs.loc[runs["status"] == SearchStatus.FAILED.value, "search_id"])
         usable = (pricing["conditions_key"] == key) & ~pricing["search_id"].isin(failed)
         tables["pricing_snapshots"] = pricing[usable]
+        listings = raw["listings"]
+        sample = set(pricing.loc[usable, "listing_id"])
+        if not listings.empty:
+            sample |= set(listings.loc[listings["is_mine"], "listing_id"])
+        for name in ("listings", "calendar_snapshots", "reviews"):
+            frame = tables[name]
+            if not frame.empty:
+                tables[name] = frame[frame["listing_id"].isin(sample)]
     return tables
 
 

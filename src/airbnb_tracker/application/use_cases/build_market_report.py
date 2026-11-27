@@ -56,8 +56,10 @@ class BuildMarketReportUseCase:
         for snapshot in latest:
             by_nights[snapshot.stay.nights].append(snapshot)
 
+        sample = {offer.listing.id for snapshot in latest for offer in snapshot.offers}
         calendars = self._calendars.latest_calendars()
         mine = calendars.pop(query.my_listing_id, None) if query.my_listing_id else None
+        calendars = {i: c for i, c in calendars.items() if i in sample}  # current sample only
         window = query.availability_window_days
         return ReportBundle(
             generated_at=self._clock.now(),

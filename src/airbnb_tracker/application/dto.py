@@ -26,7 +26,12 @@ from airbnb_tracker.domain.value_objects import BoundingBox, GeoPoint, Money, St
 
 @dataclass(frozen=True, slots=True)
 class SearchFilters:
-    """Airbnb search filters, mirrored from the website's filter panel."""
+    """Search filters, mirrored from the website's filter panel.
+
+    ``price_min`` / ``price_max`` are per night and applied here, on the price read with
+    its unit, never sent to Airbnb: Airbnb compares them with the *monthly* price from 28
+    nights on, which silently empties long-stay searches.
+    """
 
     guests: int = 2
     room_type: RoomType | None = None
@@ -35,6 +40,11 @@ class SearchFilters:
     min_bathrooms: int | None = None
     price_min: int | None = None
     price_max: int | None = None
+
+    def allows_nightly(self, nightly: Decimal) -> bool:
+        return (not self.price_min or nightly >= self.price_min) and (
+            not self.price_max or nightly <= self.price_max
+        )
 
 
 class SearchStatus(StrEnum):
